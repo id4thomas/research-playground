@@ -1,0 +1,7 @@
+opencv-python-headless==4.13.0.92
+pillow==12.2.0
+pydantic>=2.0
+torch==2.11.0
+torchvision==0.26.0
+transformers>=4.46
+--extra-index-url https://download.pytorch.org/whl/cu130
