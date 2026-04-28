@@ -5,4 +5,4 @@ Multi-modal Paper (PDF) analyzer (doclayout, VLM, zvec)
 
 | component | description | tech stack |
 | --- | --- | --- |
-| [doclayout-server](./doclayout-server/) | Serving `PP-DocLayoutV3` with tritonserver | tritonserver |
+| [[inference] doclayout](./inference-server/doclayout/) | Serving `PP-DocLayoutV3` with tritonserver | tritonserver |
