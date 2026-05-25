@@ -1,4 +1,6 @@
 import { useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { DocumentT } from "../types";
 import type { MsgWithIntent } from "../App";
 import { DiffPopup } from "./DiffPopup";
@@ -22,7 +24,8 @@ type Props = {
   doc: DocumentT | null;
   busy: boolean;
   width: number;
-  onSend: (text: string) => void;
+  onSend: (text: string, pickedOptionIndex?: number) => void;
+  tokenSummary: { context: number; reasoning: number; output: number };
   onAcceptEdit: (msgIdx: number, entryIdx: number) => void;
   onDeclineEdit: (msgIdx: number, entryIdx: number) => void;
   onInstructEdit: (msgIdx: number, entryIdx: number, text: string) => void;
@@ -53,9 +56,11 @@ export function ChatPanel({
   sessionSuggestion,
   onStartNewSession,
   onDismissSessionSuggestion,
+  tokenSummary,
 }: Props) {
   const [draft, setDraft] = useState("");
   const [openTrace, setOpenTrace] = useState<TraceEntry | null>(null);
+  const [usageOpen, setUsageOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   function submit() {
@@ -72,8 +77,23 @@ export function ChatPanel({
       className="shrink-0 border-l border-slate-200 bg-slate-50 flex flex-col"
     >
       <div className="px-4 py-3 border-b border-slate-200 bg-white">
-        <div className="text-[11px] font-semibold tracking-wider text-slate-500">
-          PROJECT CHAT
+        <div className="flex items-center justify-between">
+          <div className="text-[11px] font-semibold tracking-wider text-slate-500">
+            PROJECT CHAT
+          </div>
+          <button
+            type="button"
+            onClick={() => setUsageOpen(true)}
+            title="턴별 토큰 사용량 보기"
+            className="flex items-center gap-1 text-[10px] hover:opacity-80"
+          >
+            <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">
+              컨텍스트 <b>{tokenSummary.context.toLocaleString()}</b>
+            </span>
+            <span className="px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">
+              출력 <b>{(tokenSummary.output + tokenSummary.reasoning).toLocaleString()}</b>
+            </span>
+          </button>
         </div>
         {selected.length > 0 && (
           <div className="mt-1 flex flex-wrap items-center gap-1">
@@ -130,8 +150,8 @@ export function ChatPanel({
                       </button>
                     )}
                   </div>
-                  <div className="rounded-lg px-3 py-2 text-sm bg-white border border-slate-200 text-slate-800">
-                    {m.content}
+                  <div className="rounded-lg px-3 py-2 text-sm bg-white border border-slate-200 text-slate-800 prose-block">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
                   </div>
                   {m.clarifyOptions && m.clarifyOptions.length > 0 && (
                     <div className="flex flex-col gap-1 pt-1">
@@ -139,7 +159,7 @@ export function ChatPanel({
                         <button
                           key={k}
                           disabled={!isLast || busy}
-                          onClick={() => onSend(opt)}
+                          onClick={() => onSend(opt, k)}
                           className="text-left text-xs px-2.5 py-1.5 rounded border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                         >
                           {opt}
@@ -201,10 +221,39 @@ export function ChatPanel({
         <div ref={bottomRef} />
       </div>
 
-      <div className="border-t border-slate-200 bg-white p-2 flex gap-2">
+      <div className="border-t border-slate-200 bg-white p-2 flex gap-2 relative">
+        {(() => {
+          const m = draft.match(/^\\([a-z]*)$/i);
+          if (!m) return null;
+          const q = m[1].toLowerCase();
+          const cmds = [
+            { name: "edit", desc: "본문 블록 수정 제안" },
+            { name: "restructure", desc: "섹션 구조 변경 제안" },
+            { name: "answer", desc: "수정 없이 질문에 답변" },
+            { name: "clarify", desc: "선택지를 묻는 질문 생성" },
+          ].filter((c) => c.name.startsWith(q));
+          if (cmds.length === 0) return null;
+          return (
+            <div className="absolute bottom-full left-2 mb-1 w-64 rounded border border-slate-300 bg-white shadow-lg overflow-hidden z-10">
+              {cmds.map((c) => (
+                <button
+                  key={c.name}
+                  className="w-full text-left px-2.5 py-1.5 hover:bg-slate-100 flex items-center gap-2 border-b last:border-b-0 border-slate-100"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    setDraft(`\\${c.name} `);
+                  }}
+                >
+                  <span className="font-mono text-xs text-blue-700">\{c.name}</span>
+                  <span className="text-[10px] text-slate-500">{c.desc}</span>
+                </button>
+              ))}
+            </div>
+          );
+        })()}
         <input
           className="flex-1 rounded border border-slate-300 px-2 py-1.5 text-sm disabled:opacity-50"
-          placeholder={doc ? "메시지 입력 (\\edit, \\restructure, \\answer, \\clarify 로 직접 지정 가능)" : "문서를 먼저 업로드하세요"}
+          placeholder={doc ? "메시지 입력 (\\ 입력 시 커맨드 자동완성)" : "문서를 먼저 업로드하세요"}
           value={draft}
           disabled={!doc || busy}
           onChange={(e) => setDraft(e.target.value)}
@@ -224,6 +273,7 @@ export function ChatPanel({
         </button>
       </div>
       {openTrace && <DebugModal trace={openTrace} onClose={() => setOpenTrace(null)} />}
+      {usageOpen && <UsageModal messages={messages} onClose={() => setUsageOpen(false)} />}
     </aside>
   );
 }
@@ -285,6 +335,95 @@ function ClarifyDirectInput({ onSubmit, disabled }: { onSubmit: (text: string) =
       >
         취소
       </button>
+    </div>
+  );
+}
+
+function UsageModal({ messages, onClose }: { messages: MsgWithIntent[]; onClose: () => void }) {
+  const rows = messages
+    .map((m, i) => ({ m, i }))
+    .filter(({ m }) => m.role === "assistant" && m.tokenUsage);
+  const total = rows.reduce(
+    (acc, { m }) => {
+      const u = m.tokenUsage!;
+      return {
+        input: acc.input + u.input,
+        output: acc.output + u.output,
+        reasoning: acc.reasoning + u.reasoning,
+      };
+    },
+    { input: 0, output: 0, reasoning: 0 }
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+      <div
+        className="bg-white rounded-lg shadow-xl w-[560px] max-h-[80vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-4 py-2 border-b border-slate-200 flex items-center justify-between">
+          <div className="font-semibold text-sm">토큰 사용량 기록</div>
+          <button className="text-slate-500 hover:text-slate-800 text-lg leading-none" onClick={onClose}>
+            ×
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-3">
+          <table className="w-full text-xs">
+            <thead className="text-slate-500">
+              <tr className="border-b border-slate-200">
+                <th className="text-left py-1">턴</th>
+                <th className="text-left py-1">의도</th>
+                <th className="text-right py-1">입력</th>
+                <th className="text-right py-1">리즈닝</th>
+                <th className="text-right py-1">출력</th>
+                <th className="text-right py-1">합</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="text-center py-4 text-slate-400 italic">
+                    아직 호출 기록이 없습니다.
+                  </td>
+                </tr>
+              )}
+              {rows.map(({ m, i }, k) => {
+                const u = m.tokenUsage!;
+                return (
+                  <tr key={i} className="border-b border-slate-100">
+                    <td className="py-1 text-slate-500">#{k + 1}</td>
+                    <td className="py-1">{m.intent || "-"}</td>
+                    <td className="py-1 text-right font-mono">{u.input.toLocaleString()}</td>
+                    <td className="py-1 text-right font-mono text-violet-700">{u.reasoning.toLocaleString()}</td>
+                    <td className="py-1 text-right font-mono text-blue-700">{u.output.toLocaleString()}</td>
+                    <td className="py-1 text-right font-mono font-semibold">
+                      {(u.input + u.output + u.reasoning).toLocaleString()}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            {rows.length > 0 && (
+              <tfoot>
+                <tr className="border-t-2 border-slate-300 font-semibold">
+                  <td className="py-1.5" colSpan={2}>누적</td>
+                  <td className="py-1.5 text-right font-mono">{total.input.toLocaleString()}</td>
+                  <td className="py-1.5 text-right font-mono text-violet-700">{total.reasoning.toLocaleString()}</td>
+                  <td className="py-1.5 text-right font-mono text-blue-700">{total.output.toLocaleString()}</td>
+                  <td className="py-1.5 text-right font-mono">
+                    {(total.input + total.output + total.reasoning).toLocaleString()}
+                  </td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+          <p className="text-[10px] text-slate-500 mt-3 leading-relaxed">
+            • <b>입력</b>은 해당 호출에서 모델이 본 컨텍스트(시스템 프롬프트 + 히스토리) 토큰입니다.<br />
+            • <b>리즈닝</b>은 모델 내부 thinking 토큰, <b>출력</b>은 사용자에게 전달된 응답 토큰입니다.<br />
+            • 헤더의 "컨텍스트"는 가장 최근 호출의 입력 토큰, "출력"은 세션 누적 (출력+리즈닝) 입니다.
+          </p>
+        </div>
+      </div>
     </div>
   );
 }

@@ -3,7 +3,7 @@ import { Sidebar } from "./components/Sidebar";
 import { Editor } from "./components/Editor";
 import { ChatPanel } from "./components/ChatPanel";
 import { Resizer } from "./components/Resizer";
-import type { DocumentT, EditEntry, Intent, OutlineEntry } from "./types";
+import type { DocumentT, EditEntry, Intent, OutlineEntry, TokenUsage } from "./types";
 import * as api from "./lib/api";
 import { applyEditWithAnchors, initAnchors, type Anchors } from "./lib/edits";
 import { applyOutlineAction } from "./lib/outline";
@@ -18,6 +18,10 @@ export type MsgWithIntent = {
   editEntries?: EditEntry[];
   outlineEntries?: OutlineEntry[];
   turnId?: string;
+  // user 메시지가 직전 어시스턴트의 clarify 보기 중 몇 번째를 클릭해서 만들어졌는지.
+  pickedOptionIndex?: number;
+  // assistant 메시지에 한해, 이 턴 호출이 소비한 토큰 수.
+  tokenUsage?: TokenUsage;
 };
 
 const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
@@ -65,14 +69,18 @@ export default function App() {
     });
   }
 
-  async function onSend(text: string, baseMessages?: MsgWithIntent[]) {
+  async function onSend(text: string, baseMessages?: MsgWithIntent[], opts?: { pickedOptionIndex?: number }) {
     if (!doc || !docId) return;
     const slash = api.parseSlashDirective(text);
     const visibleText = text;
     const apiText = slash ? slash.body || text : text;
 
     const base = baseMessages ?? messages;
-    const userMsg: MsgWithIntent = { role: "user", content: visibleText };
+    const userMsg: MsgWithIntent = {
+      role: "user",
+      content: visibleText,
+      pickedOptionIndex: opts?.pickedOptionIndex,
+    };
     const next = [...base, userMsg];
     setMessages(next);
     setBusy(true);
@@ -110,12 +118,14 @@ export default function App() {
       }));
 
       const assistantMsg: MsgWithIntent = {
-        ...res.message,
+        role: "assistant",
+        content: res.message?.content ?? "",
         intent: res.intent,
         clarifyOptions: res.clarify_options,
         editEntries: editEntries.length ? editEntries : undefined,
         outlineEntries: outlineEntries.length ? outlineEntries : undefined,
         turnId,
+        tokenUsage: res.token_usage,
       };
       setMessages((m) => [...m, assistantMsg]);
       setEditAnchors(initAnchors(doc));
@@ -235,6 +245,42 @@ export default function App() {
     reason: pendingSessionReason,
   };
 
+  // 토큰 사용량: 누적 출력/리즈닝 + 가장 최근 어시스턴트 호출이 본 입력(=대화 컨텍스트 크기).
+  const tokenSummary = (() => {
+    let cumulativeOutput = 0;
+    let cumulativeReasoning = 0;
+    let lastInput = 0;
+    for (const m of messages) {
+      const u = m.tokenUsage;
+      if (!u) continue;
+      cumulativeOutput += u.output;
+      cumulativeReasoning += u.reasoning;
+      lastInput = u.input;
+    }
+    return { context: lastInput, reasoning: cumulativeReasoning, output: cumulativeOutput };
+  })();
+
+  function onDeleteBlock(sectionCode: string, idx: number) {
+    if (!doc) return;
+    const section = doc.sections[sectionCode];
+    if (!section) return;
+    const blocks = section.blocks.filter((_, i) => i !== idx);
+    const nextDoc = {
+      ...doc,
+      sections: { ...doc.sections, [sectionCode]: { ...section, blocks } },
+    };
+    setDoc(nextDoc);
+    const ref = `${sectionCode};${idx}`;
+    if (selected.has(ref)) {
+      setSelected((s) => {
+        const n = new Set(s);
+        n.delete(ref);
+        return n;
+      });
+    }
+    setEditAnchors(initAnchors(nextDoc));
+  }
+
   function onEditBlock(sectionCode: string, idx: number, value: string) {
     if (!doc) return;
     const section = doc.sections[sectionCode];
@@ -267,6 +313,7 @@ export default function App() {
           selected={selected}
           onToggleSelect={onToggleSelect}
           onEditBlock={onEditBlock}
+          onDeleteBlock={onDeleteBlock}
           jumpTarget={jumpTarget}
         />
       ) : (
@@ -284,7 +331,8 @@ export default function App() {
         doc={doc}
         busy={busy}
         width={chatW}
-        onSend={(t) => onSend(t)}
+        onSend={(t, pickedIdx) => onSend(t, undefined, { pickedOptionIndex: pickedIdx })}
+        tokenSummary={tokenSummary}
         onAcceptEdit={onAcceptEdit}
         onDeclineEdit={onDeclineEdit}
         onInstructEdit={onInstructEdit}

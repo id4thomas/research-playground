@@ -9,6 +9,7 @@ type Props = {
   selected: Set<string>;
   onToggleSelect: (ref: string) => void;
   onEditBlock: (sectionCode: string, idx: number, value: string) => void;
+  onDeleteBlock: (sectionCode: string, idx: number) => void;
   jumpTarget: string | null;
 };
 
@@ -49,8 +50,38 @@ function BlockBody({ block, onChange }: { block: Block; onChange: (v: string) =>
   );
 }
 
-export function Editor({ doc, selected, onToggleSelect, onEditBlock, jumpTarget }: Props) {
+function ResizeHandle({ onResize }: { onResize: (dy: number) => void }) {
+  return (
+    <div
+      title="높이 조절"
+      onPointerDown={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const startY = e.clientY;
+        let lastY = startY;
+        const onMove = (ev: PointerEvent) => {
+          onResize(ev.clientY - lastY);
+          lastY = ev.clientY;
+        };
+        const onUp = () => {
+          window.removeEventListener("pointermove", onMove);
+          window.removeEventListener("pointerup", onUp);
+        };
+        window.addEventListener("pointermove", onMove);
+        window.addEventListener("pointerup", onUp);
+      }}
+      className="absolute bottom-0 right-0 h-3 w-3 cursor-ns-resize opacity-0 group-hover:opacity-60 hover:!opacity-100"
+      style={{
+        background:
+          "linear-gradient(135deg, transparent 0 45%, rgb(100 116 139) 45% 55%, transparent 55% 100%)",
+      }}
+    />
+  );
+}
+
+export function Editor({ doc, selected, onToggleSelect, onEditBlock, onDeleteBlock, jumpTarget }: Props) {
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
+  const [heights, setHeights] = useState<Record<string, number>>({});
 
   // Scroll to section when jumpTarget changes
   const prevJump = useRef<string | null>(null);
@@ -95,9 +126,11 @@ export function Editor({ doc, selected, onToggleSelect, onEditBlock, jumpTarget 
                 {blocks.map((b, i) => {
                   const ref = makeRef(code, i);
                   const isSel = selected.has(ref);
+                  const h = heights[ref];
                   return (
                     <div
                       key={i}
+                      style={h ? { height: h, overflow: "auto" } : undefined}
                       className={
                         "group relative rounded border px-3 py-2 transition " +
                         (isSel
@@ -120,7 +153,26 @@ export function Editor({ doc, selected, onToggleSelect, onEditBlock, jumpTarget 
                         <span className="text-[10px] font-mono text-slate-400 opacity-0 group-hover:opacity-100 shrink-0">
                           {b.type !== "text" ? `${b.type} ` : ""}{ref}
                         </span>
+                        <button
+                          title="블록 삭제"
+                          onClick={() => onDeleteBlock(code, i)}
+                          className="opacity-0 group-hover:opacity-100 shrink-0 h-5 w-5 flex items-center justify-center rounded text-red-600 hover:bg-red-100 transition"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5">
+                            <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 0 0 6 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 1 0 .23 1.482l.149-.022.841 10.518A2.75 2.75 0 0 0 7.596 19h4.807a2.75 2.75 0 0 0 2.742-2.53l.841-10.52.149.023a.75.75 0 0 0 .23-1.482A41.03 41.03 0 0 0 14 4.193V3.75A2.75 2.75 0 0 0 11.25 1h-2.5ZM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4ZM8.58 7.72a.75.75 0 0 0-1.5.06l.3 7.5a.75.75 0 1 0 1.5-.06l-.3-7.5Zm4.34.06a.75.75 0 1 0-1.5-.06l-.3 7.5a.75.75 0 1 0 1.5.06l.3-7.5Z" clipRule="evenodd" />
+                          </svg>
+                        </button>
                       </div>
+                      <ResizeHandle
+                        onResize={(dy) =>
+                          setHeights((prev) => {
+                            const cur = prev[ref] ?? 0;
+                            const base = cur || 60;
+                            const next = Math.max(32, base + dy);
+                            return { ...prev, [ref]: next };
+                          })
+                        }
+                      />
                     </div>
                   );
                 })}

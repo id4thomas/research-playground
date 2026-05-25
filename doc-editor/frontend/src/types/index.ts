@@ -22,16 +22,6 @@ export type DocumentT = {
 
 // ---------- Chat / Edits ----------
 
-export type ChatMessage = { role: "user" | "assistant" | "system"; content: string };
-
-export type RewriteEdit = { action: "REWRITE"; value: string };
-export type ReplaceEdit = { action: "REPLACE"; source: string; target: string };
-export type InsertEdit  = { action: "INSERT"; value: Block };
-export type Edit = RewriteEdit | ReplaceEdit | InsertEdit;
-
-export type EditsMap = Record<string, Edit[]>;
-export type EditItem = { ref: string; edit: Edit };
-
 export type Intent =
   | "edit"
   | "restructure"
@@ -39,18 +29,57 @@ export type Intent =
   | "answer"
   | "";
 
+export type ItemStatus = "pending" | "accepted" | "declined" | "instructed";
+
+export type TokenUsage = { input: number; output: number; reasoning: number };
+
+export type EditProposalMeta = {
+  ref: string;
+  action: "REWRITE" | "REPLACE" | "INSERT";
+  target_desc?: string;
+  summary?: string;
+  content?: string;
+  status?: ItemStatus;
+  instruction?: string | null;
+};
+
+export type OutlineProposalMeta = {
+  action: "RENAME" | "ADD" | "REMOVE" | "MERGE";
+  target_desc?: string;
+  summary?: string;
+  status?: ItemStatus;
+  instruction?: string | null;
+};
+
+export type ChatMessage = {
+  role: "user" | "assistant" | "system";
+  content: string;
+  intent?: Intent | null;
+  clarify_options?: string[] | null;
+  edit_proposals?: EditProposalMeta[] | null;
+  outline_proposals?: OutlineProposalMeta[] | null;
+  picked_option_index?: number | null;
+};
+
+export type RewriteEdit = { action: "REWRITE"; value: string; summary?: string };
+export type ReplaceEdit = { action: "REPLACE"; source: string; target: string; summary?: string };
+export type InsertEdit  = { action: "INSERT"; value: Block; summary?: string };
+export type Edit = RewriteEdit | ReplaceEdit | InsertEdit;
+
+export type EditsMap = Record<string, Edit[]>;
+export type EditItem = { ref: string; edit: Edit };
+
 export type OutlineAction =
   | { action: "RENAME"; target: string; title: string }
   | { action: "ADD"; target: string | null; title: string; level?: number | null; position?: number | null }
   | { action: "REMOVE"; target: string }
   | { action: "MERGE"; targets: string[]; title?: string | null; level?: number | null };
 
-export type ItemStatus = "pending" | "accepted" | "declined" | "instructed";
 export type EditEntry = {
   ref: string;
   edit: Edit;
   status: ItemStatus;
-  instruction?: string; // status === "instructed" 일 때 사용자가 남긴 보강 지시 텍스트
+  instruction?: string;
 };
 export type OutlineEntry = {
   action: OutlineAction;
@@ -66,6 +95,7 @@ export type ChatResponse = {
   suggest_new_session?: boolean;
   suggest_new_session_reason?: string | null;
   clarify_options?: string[];
+  token_usage?: TokenUsage;
 };
 
 // ---------- Helpers ----------

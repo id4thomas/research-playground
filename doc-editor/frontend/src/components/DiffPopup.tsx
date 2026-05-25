@@ -56,6 +56,12 @@ export function DiffPopup({ doc, entries, onAccept, onDecline, onInstruct }: Pro
                 {edit.action === "INSERT" ? " (after)" : ""}
               </span>
             </div>
+            {edit.summary && (
+              <div className="text-[11px] text-slate-700 bg-amber-50/70 border border-amber-200 rounded px-2 py-1">
+                <span className="text-amber-700 font-semibold mr-1">의도</span>
+                {edit.summary}
+              </div>
+            )}
             {before !== "" && (
               <div>
                 <div className="text-[10px] text-slate-500 mb-0.5">Before</div>

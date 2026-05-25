@@ -76,9 +76,94 @@ function Pane({ title, data }: { title: string; data: unknown }) {
       <div className="px-2 py-1 bg-slate-100 text-[11px] font-semibold text-slate-600">
         {title}
       </div>
-      <pre className="text-[11px] font-mono p-2 overflow-auto bg-slate-50 whitespace-pre-wrap break-words">
-        {JSON.stringify(data, null, 2)}
-      </pre>
+      <div className="text-[11px] font-mono p-2 overflow-auto bg-slate-50">
+        <JsonNode value={data} defaultOpen depth={0} />
+      </div>
     </div>
   );
+}
+
+function JsonNode({
+  name,
+  value,
+  defaultOpen = false,
+  depth,
+}: {
+  name?: string;
+  value: unknown;
+  defaultOpen?: boolean;
+  depth: number;
+}) {
+  const [open, setOpen] = useState(defaultOpen || depth < 1);
+
+  const isObject = value !== null && typeof value === "object";
+  const label = name !== undefined ? <span className="text-slate-700">"{name}"</span> : null;
+
+  if (!isObject) {
+    return (
+      <div style={{ paddingLeft: depth * 12 }} className="leading-5">
+        {label}
+        {label && <span className="text-slate-500">: </span>}
+        <span className={valueColor(value)}>{formatPrimitive(value)}</span>
+      </div>
+    );
+  }
+
+  const isArray = Array.isArray(value);
+  const entries: [string, unknown][] = isArray
+    ? (value as unknown[]).map((v, i) => [String(i), v])
+    : Object.entries(value as Record<string, unknown>);
+  const open_b = isArray ? "[" : "{";
+  const close_b = isArray ? "]" : "}";
+
+  if (entries.length === 0) {
+    return (
+      <div style={{ paddingLeft: depth * 12 }} className="leading-5">
+        {label}
+        {label && <span className="text-slate-500">: </span>}
+        <span className="text-slate-500">{open_b}{close_b}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ paddingLeft: depth * 12 }} className="leading-5">
+      <div
+        className="cursor-pointer select-none hover:bg-slate-100 rounded"
+        onClick={() => setOpen(!open)}
+      >
+        <span className="inline-block w-3 text-slate-500">{open ? "▾" : "▸"}</span>
+        {label}
+        {label && <span className="text-slate-500">: </span>}
+        <span className="text-slate-500">
+          {open ? open_b : `${open_b} … ${close_b}`}
+          {!open && <span className="text-slate-400"> {entries.length} {isArray ? "items" : "keys"}</span>}
+        </span>
+      </div>
+      {open && (
+        <>
+          {entries.map(([k, v]) => (
+            <JsonNode key={k} name={isArray ? undefined : k} value={v} depth={depth + 1} />
+          ))}
+          <div style={{ paddingLeft: 12 }} className="text-slate-500 leading-5">
+            {close_b}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function formatPrimitive(v: unknown): string {
+  if (v === null) return "null";
+  if (typeof v === "string") return `"${v}"`;
+  return String(v);
+}
+
+function valueColor(v: unknown): string {
+  if (v === null) return "text-slate-400";
+  if (typeof v === "string") return "text-emerald-700";
+  if (typeof v === "number") return "text-blue-700";
+  if (typeof v === "boolean") return "text-purple-700";
+  return "text-slate-700";
 }
