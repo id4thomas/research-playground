@@ -1,0 +1,20 @@
+name: answer
+model:
+  temperature: 0.3
+  extra_body:
+    chat_template_kwargs:
+      enable_thinking: false
+input_variables: [outline_text, body_text]
+prompt:
+  system: |
+    당신은 문서 편집 어시스턴트입니다. 사용자의 질문에 1~5문장으로 한국어로 답하세요.
+    - 문서 내용 기반 질문이면 outline과 대화 맥락을 활용.
+    - 'S1', 'S1-2;0' 같은 내부 코드를 노출하지 말고 섹션의 실제 한국어 제목으로 지칭.
+
+    ## 문서 Outline
+    {{ outline_text }}
+    {% if body_text %}
+
+    ## 참고 본문
+    {{ body_text }}
+    {% endif %}

@@ -3,7 +3,9 @@ from langchain_core.messages import BaseMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from core.langchain.llm import LangChainChatModel
+from core.langchain.usage import TokenUsage
 from core.logger import get_logger
+from core.prompts import load_agent_spec
 from core.data import Document, LLMEdit
 
 logger = get_logger(__name__)
@@ -12,6 +14,7 @@ logger = get_logger(__name__)
 class EditGenerateOutput(BaseModel):
     edits: list[LLMEdit] = Field(default_factory=list)
     message: str | None = None
+    token_usage: TokenUsage = Field(default_factory=TokenUsage)
 
 
 class _LLMOut(BaseModel):
@@ -22,30 +25,6 @@ class _LLMOut(BaseModel):
         )
     )
     edits: list[LLMEdit] = Field(default_factory=list)
-
-
-_SYSTEM = """당신은 범용 문서 편집 어시스턴트입니다.
-문서 섹션(블록 목록)과 사용자 요청을 보고 블록 단위 수정안을 JSON으로 생성합니다.
-
-블록 ref 형식: "<섹션코드>;<블록인덱스>"  예) "S1;0", "S1-2;3"
-- ref 필드에서는 위 코드를 그대로 사용.
-
-액션: REWRITE (블록 전체 재작성) | REPLACE (substring 치환) | INSERT (아래에 삽입)
-
-★★★ 블록당 액션 개수 규칙 ★★★
-- REWRITE: 같은 블록(ref)에 대해 **반드시 1개만** 제안합니다. 여러 버전의 재작성안을 나열하지 마세요. 가장 적합한 단일 안을 고르세요.
-- REPLACE: 같은 블록에 대해 서로 다른 substring을 치환하는 경우에 한해 N개 허용.
-- INSERT: 같은 블록 아래 N개 삽입 허용.
-- 같은 ref에 REWRITE와 REPLACE/INSERT를 섞지 마세요. REWRITE를 선택했다면 그 블록에는 REWRITE 1개만 둡니다.
-
-★★★ message(사용자에게 보여줄 응답) 작성 규칙 ★★★
-절대로 'S1', 'S1-1', 'S1-2;0' 같은 내부 코드를 포함하지 마세요. 괄호로 묶어도 안 됩니다.
-오직 섹션의 한국어 제목만 사용하세요.
-
-❌ 금지: "S1-2 (문제점) 섹션의 첫 번째 블록을 보완했습니다."
-✅ 권장: "'문제점' 섹션의 첫 번째 부분을 보완했습니다."
-
-미사용 필드는 반드시 null. 코드블록 없이 순수 JSON만 반환합니다."""
 
 
 def render_document(document: Document, target_sections: list[str] | None) -> str:
@@ -66,37 +45,36 @@ async def generate_edits(
     selected: list[str] | None = None,
     target_sections: list[str] | None = None,
 ) -> EditGenerateOutput:
+    spec = load_agent_spec("edit")
     doc_text = render_document(document, target_sections)
     selected_ctx = ""
     if selected:
         selected_ctx = f"\n\n## 선택된 블록 (이 블록들만 수정)\n{', '.join(selected)}"
-    system_prompt = (
-        f"{_SYSTEM}\n\n"
-        f"## 문서 블록\n{doc_text}{selected_ctx}"
-    )
+    system_prompt = spec.render_system(doc_text=doc_text, selected_ctx=selected_ctx)
 
-    llm = LangChainChatModel.get_model(
-        temperature=0.2,
-        extra_body={"chat_template_kwargs": {"enable_thinking": False}},
-    ).with_structured_output(_LLMOut)
+    llm = LangChainChatModel.get_model(**spec.model_kwargs).with_structured_output(
+        spec.output_schema, include_raw=True
+    )
     try:
-        result: _LLMOut = await llm.ainvoke(
+        raw = await llm.ainvoke(
             [SystemMessage(content=system_prompt)] + list(messages)
         )
+        result: _LLMOut = raw["parsed"]
+        usage = TokenUsage.from_message(raw)
     except Exception as e:
         logger.warning("[edit_generate] structured output failed: %s", e)
         return EditGenerateOutput(
             edits=[],
             message="수정안을 생성하지 못했습니다. 요청 범위를 좁혀 다시 시도해 주세요.",
         )
-    logger.info("[edit_generate] %d edit(s) proposed", len(result.edits))
+    logger.info("[edit_generate] %d edit(s) proposed usage=%s", len(result.edits), usage.model_dump())
     deduped = _enforce_action_rules(result.edits)
     if len(deduped) != len(result.edits):
         logger.info(
             "[edit_generate] enforced action rules: %d → %d edit(s)",
             len(result.edits), len(deduped),
         )
-    return EditGenerateOutput(edits=deduped, message=result.message)
+    return EditGenerateOutput(edits=deduped, message=result.message, token_usage=usage)
 
 
 def _enforce_action_rules(edits: list[LLMEdit]) -> list[LLMEdit]:

@@ -14,6 +14,10 @@ class LLMEdit(BaseModel):
     """LLM이 직접 뱉는 평탄한 edit 모델 (서버에서 Edit으로 좁힌다)."""
     ref: str = Field(description='블록 식별자. 예: "S1;0", "S1-2;3".')
     action: Literal["REWRITE", "REPLACE", "INSERT"]
+    summary: str = Field(
+        default="",
+        description="이 수정이 무엇을 어떻게 바꾸는지 한국어 1줄 요약 (20~60자, 변경 의도/핵심만).",
+    )
     value: str | None = None
     value_type: Literal["text", "equation", "table"] | None = None
     source: str | None = None
@@ -23,17 +27,20 @@ class LLMEdit(BaseModel):
 class RewriteEdit(BaseModel):
     action: Literal["REWRITE"] = "REWRITE"
     value: str
+    summary: str = ""
 
 
 class ReplaceEdit(BaseModel):
     action: Literal["REPLACE"] = "REPLACE"
     source: str
     target: str
+    summary: str = ""
 
 
 class InsertEdit(BaseModel):
     action: Literal["INSERT"] = "INSERT"
     value: Block
+    summary: str = ""
 
 
 Edit = Union[RewriteEdit, ReplaceEdit, InsertEdit]

@@ -6,11 +6,14 @@ __all__ = ["llm_edit_to_api", "edits_to_map", "enforce_action_rules_map"]
 
 def llm_edit_to_api(le: LLMEdit) -> Edit | None:
     if le.action == "REWRITE" and le.value:
-        return RewriteEdit(value=le.value)
+        return RewriteEdit(value=le.value, summary=le.summary)
     if le.action == "REPLACE" and le.source and le.target:
-        return ReplaceEdit(source=le.source, target=le.target)
+        return ReplaceEdit(source=le.source, target=le.target, summary=le.summary)
     if le.action == "INSERT" and le.value:
-        return InsertEdit(value=Block(type=le.value_type or "text", content=le.value))
+        return InsertEdit(
+            value=Block(type=le.value_type or "text", content=le.value),
+            summary=le.summary,
+        )
     return None
 
 

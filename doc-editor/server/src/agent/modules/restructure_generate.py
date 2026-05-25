@@ -3,7 +3,9 @@ from langchain_core.messages import BaseMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from core.langchain.llm import LangChainChatModel
+from core.langchain.usage import TokenUsage
 from core.logger import get_logger
+from core.prompts import load_agent_spec
 from core.data import Document, OutlineAction
 
 logger = get_logger(__name__)
@@ -12,6 +14,7 @@ logger = get_logger(__name__)
 class RestructureGenerateOutput(BaseModel):
     actions: list[OutlineAction] = Field(default_factory=list)
     message: str | None = None
+    token_usage: TokenUsage = Field(default_factory=TokenUsage)
 
 
 class _LLMOut(BaseModel):
@@ -22,29 +25,6 @@ class _LLMOut(BaseModel):
         )
     )
     outline_actions: list[OutlineAction] = Field(default_factory=list)
-
-
-_SYSTEM = """당신은 문서의 섹션 구조(헤더 트리)를 편집하는 에이전트입니다.
-현재 outline을 보고 RENAME / ADD / REMOVE / MERGE 네 가지 액션을 JSON으로 생성하세요.
-
-- RENAME: target=대상 섹션 코드, title=새 제목
-- ADD:    target=부모 섹션 코드(루트면 null), title=새 제목, level=헤더 레벨(부모.level+1, 루트는 1), position=형제 중 0-based 위치(null=맨 뒤)
-- REMOVE: target=대상 섹션 코드. 해당 섹션과 그 안의 모든 블록·하위 섹션이 함께 삭제됩니다. ★본문 손실★
-- MERGE:  targets=합칠 섹션 코드 목록(outline 순서상 연속). 첫 번째가 생존, 나머지 블록이 뒤에 이어붙음. 본문 보존.
-
-규칙:
-- 본문 보존이 필요하면 MERGE 사용, REMOVE는 본문까지 삭제됨.
-- ADD로 만든 섹션은 본문이 비어 있음 (본문 작성은 별도 턴).
-- 미사용 필드는 null. 코드블록 없이 순수 JSON.
-- 액션 불필요 시 outline_actions 빈 배열.
-
-★★★ message(사용자에게 보여줄 응답) 작성 규칙 ★★★
-절대로 'S1', 'S1-1', 'S2-1-1' 같은 내부 코드를 포함하지 마세요. 괄호로 묶어도 안 됩니다.
-오직 섹션의 한국어 제목만 사용하세요.
-
-❌ 금지: "S2-1 (핵심 구성) 아래에 S2-1-3 섹션을 추가합니다."
-✅ 권장: "'핵심 구성' 섹션 아래에 '확장 모듈' 섹션을 추가합니다."
-"""
 
 
 def _render_outline(document: Document) -> str:
@@ -58,19 +38,18 @@ async def generate_restructure(
     messages: list[BaseMessage],
     document: Document,
 ) -> RestructureGenerateOutput:
+    spec = load_agent_spec("restructure")
     outline_text = _render_outline(document)
-    system_prompt = (
-        f"{_SYSTEM}\n\n"
-        f"## 현재 Outline\n{outline_text}"
+    system_prompt = spec.render_system(outline_text=outline_text)
+    llm = LangChainChatModel.get_model(**spec.model_kwargs).with_structured_output(
+        spec.output_schema, include_raw=True
     )
-    llm = LangChainChatModel.get_model(
-        temperature=0,
-        extra_body={"chat_template_kwargs": {"enable_thinking": False}},
-    ).with_structured_output(_LLMOut)
     try:
-        result: _LLMOut = await llm.ainvoke(
+        raw = await llm.ainvoke(
             [SystemMessage(content=system_prompt)] + list(messages)
         )
+        result: _LLMOut = raw["parsed"]
+        usage = TokenUsage.from_message(raw)
     except Exception as e:
         logger.warning("[restructure_generate] structured output failed: %s", e)
         return RestructureGenerateOutput(
@@ -81,8 +60,11 @@ async def generate_restructure(
             ),
         )
     logger.info(
-        "[restructure_generate] %d action(s): %s",
+        "[restructure_generate] %d action(s): %s usage=%s",
         len(result.outline_actions),
         [a.action for a in result.outline_actions],
+        usage.model_dump(),
     )
-    return RestructureGenerateOutput(actions=result.outline_actions, message=result.message)
+    return RestructureGenerateOutput(
+        actions=result.outline_actions, message=result.message, token_usage=usage
+    )

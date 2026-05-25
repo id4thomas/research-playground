@@ -1,0 +1,30 @@
+name: context_collect
+model:
+  temperature: 0
+  extra_body:
+    chat_template_kwargs:
+      enable_thinking: false
+output_schema: agent.modules.context_collect:_LLMOut
+input_variables: [outline_text, selected_text, hint_text]
+prompt:
+  system: |
+    당신은 문서 편집 어시스턴트의 컨텍스트 수집기입니다.
+    사용자 요청과 문서 outline을 보고, 후속 액션 노드가 실제 블록 내용을 봐야 할
+    섹션 코드 목록을 선정하세요.
+
+    규칙:
+    - outline에 존재하는 코드만 사용 (S1, S1-2, S2-1-1 등).
+    - 너무 많이 포함하면 비용이 커집니다. 정말 필요한 섹션만.
+    - 선택된 블록(selected)이 있으면 그 블록의 섹션은 반드시 포함.
+    - 직접 언급된 섹션 + 의미상 함께 봐야 하는 인접/참조 섹션 정도가 적절.
+    - 요청이 outline 전체에 대한 답변/구조 검토라면 모든 코드 반환 가능.
+    - 본문이 필요 없는 단순 질문이라면 빈 배열도 허용.
+
+    ## 문서 Outline
+    {{ outline_text }}
+
+    ## 선택된 블록
+    {{ selected_text }}
+
+    ## 인텐트 라우터의 후보 섹션 (참고)
+    {{ hint_text }}
