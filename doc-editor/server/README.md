@@ -27,15 +27,27 @@ server/
 │   │   ├── logger.py
 │   │   └── llm/langchain.py           ← ChatOpenAI 팩토리
 │   └── agent/
-│       └── doc_assistant/
-│           ├── graph.py               ← DocAssistantAgent (LangGraph)
-│           ├── states.py              ← AgentState TypedDict
-│           └── nodes/
-│               ├── intent_router.py   ← 인텐트 분류
-│               ├── edit.py            ← 블록 수정
-│               ├── restructure.py     ← 섹션 구조 변경
-│               ├── answer.py          ← 질문 답변
-│               └── assembler.py       ← 최종 응답 조합
+│       ├── base.py                    ← BaseAgent ABC
+│       ├── graphs/                    ← graph 단위 (최상위)
+│       │   ├── doc_assistant/         ← 메인 오케스트레이터
+│       │   │   ├── graph.py
+│       │   │   ├── states.py
+│       │   │   └── nodes/
+│       │   ├── doc_editor/            ← 블록 수정
+│       │   ├── doc_restructurer/      ← 섹션 구조 변경
+│       │   ├── doc_answerer/          ← 질문 답변
+│       │   └── doc_clarifier/         ← 의도 확인
+│       ├── nodes/                     ← node 단위 (중간, 공유)
+│       │   ├── base.py
+│       │   └── context_collector.py
+│       └── modules/                   ← module 단위 (최하위, 실행)
+│           ├── intent_classify.py
+│           ├── context_collect.py
+│           ├── edit_generate.py
+│           ├── answer_generate.py
+│           ├── clarify_generate.py
+│           ├── restructure_generate.py
+│           └── ...
 ├── tests/                             ← API 통합 테스트
 ├── requirements.txt
 ├── pytest.ini

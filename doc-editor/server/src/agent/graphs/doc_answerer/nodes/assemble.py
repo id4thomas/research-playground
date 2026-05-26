@@ -1,5 +1,5 @@
 """Answer assemble node — converts answer output into FinalOutput."""
-from agent.doc_assistant.states import FinalOutput
+from agent.graphs.doc_assistant.states import FinalOutput
 from agent.modules.strip_codes import strip_section_codes
 from agent.nodes.base import BaseNode
 

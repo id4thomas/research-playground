@@ -16,12 +16,12 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.graph.state import CompiledStateGraph
 
 from agent.base import BaseAgent
-from agent.doc_answerer.graph import build_answerer_graph
-from agent.doc_assistant.nodes.intent_router import intent_router_node
-from agent.doc_assistant.states import AgentState
-from agent.doc_clarifier.graph import build_clarifier_graph
-from agent.doc_editor.graph import build_editor_graph
-from agent.doc_restructurer.graph import build_restructurer_graph
+from agent.graphs.doc_answerer.graph import build_answerer_graph
+from agent.graphs.doc_assistant.nodes.intent_router import intent_router_node
+from agent.graphs.doc_assistant.states import AgentState
+from agent.graphs.doc_clarifier.graph import build_clarifier_graph
+from agent.graphs.doc_editor.graph import build_editor_graph
+from agent.graphs.doc_restructurer.graph import build_restructurer_graph
 
 
 def _route_after_intent(state: dict) -> str:

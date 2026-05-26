@@ -14,9 +14,9 @@ from langchain_core.messages import BaseMessage
 from typing_extensions import TypedDict
 
 from agent.base import BaseAgent
-from agent.doc_assistant.states import FinalOutput
-from agent.doc_clarifier.nodes.assemble import clarify_assemble_node
-from agent.doc_clarifier.nodes.clarify import clarify_node
+from agent.graphs.doc_assistant.states import FinalOutput
+from agent.graphs.doc_clarifier.nodes.assemble import clarify_assemble_node
+from agent.graphs.doc_clarifier.nodes.clarify import clarify_node
 from agent.modules.clarify_generate import ClarifyGenerateOutput
 from core.data import Document
 

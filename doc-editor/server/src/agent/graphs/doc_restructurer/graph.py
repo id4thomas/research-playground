@@ -12,9 +12,9 @@ from langchain_core.messages import BaseMessage
 from typing_extensions import TypedDict
 
 from agent.base import BaseAgent
-from agent.doc_assistant.states import FinalOutput
-from agent.doc_restructurer.nodes.assemble import restructure_assemble_node
-from agent.doc_restructurer.nodes.restructure import restructure_node
+from agent.graphs.doc_assistant.states import FinalOutput
+from agent.graphs.doc_restructurer.nodes.assemble import restructure_assemble_node
+from agent.graphs.doc_restructurer.nodes.restructure import restructure_node
 from agent.modules.restructure_generate import RestructureGenerateOutput
 from core.data import Document
 

@@ -1,11 +1,11 @@
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
 from agent.base import BaseAgent
-from agent.doc_answerer.graph import DocAnswererAgent
-from agent.doc_assistant.graph import DocAssistantAgent
-from agent.doc_clarifier.graph import DocClarifierAgent
-from agent.doc_editor.graph import DocEditorAgent
-from agent.doc_restructurer.graph import DocRestructurerAgent
+from agent.graphs.doc_answerer.graph import DocAnswererAgent
+from agent.graphs.doc_assistant.graph import DocAssistantAgent
+from agent.graphs.doc_clarifier.graph import DocClarifierAgent
+from agent.graphs.doc_editor.graph import DocEditorAgent
+from agent.graphs.doc_restructurer.graph import DocRestructurerAgent
 from agent.modules.strip_codes import strip_section_codes
 from api.chat.dto import ChatMessage, ChatRequest, ChatResponse
 from core.exceptions import GraphExecutionError
