@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root { height: 100%; }
+
+.prose-block > * + * { margin-top: 0.4em; }
+.prose-block strong { font-weight: 600; }
+.prose-block em { font-style: italic; }
+.prose-block code { background: #f1f5f9; padding: 0 0.25em; border-radius: 3px; font-size: 0.85em; }
+.prose-block pre { background: #f1f5f9; padding: 0.5em 0.75em; border-radius: 4px; overflow-x: auto; }
+.prose-block pre code { background: transparent; padding: 0; }
+.prose-block ul { list-style: disc; padding-left: 1.25em; }
+.prose-block ol { list-style: decimal; padding-left: 1.25em; }
+.prose-block li { margin: 0.1em 0; }
+.prose-block a { color: #2563eb; text-decoration: underline; }
+.prose-block blockquote { border-left: 3px solid #cbd5e1; padding-left: 0.75em; color: #475569; }
+.prose-block h1, .prose-block h2, .prose-block h3 { font-weight: 600; }
+.prose-block table { border-collapse: collapse; }
+.prose-block th, .prose-block td { border: 1px solid #e2e8f0; padding: 0.25em 0.5em; }
+.prose-block th { background: #f8fafc; }
