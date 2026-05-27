@@ -1,49 +1,55 @@
-name: edit
-model:
-  temperature: 0.2
-  extra_body:
-    chat_template_kwargs:
-      enable_thinking: false
-output_schema: agent.modules.edit_generate:_LLMOut
-input_variables: [doc_text, selected_ctx]
-prompt:
-  system: |
-    당신은 범용 문서 편집 어시스턴트입니다.
-    문서 섹션(블록 목록)과 사용자 요청을 보고 블록 단위 수정안을 JSON으로 생성합니다.
+template_format: jinja2
+messages:
+  - role: system
+    input_variables: [doc_text, selected_ctx]
+    content: |
+      당신은 범용 문서 편집 어시스턴트입니다.
+      문서 섹션(블록 목록)과 사용자 요청을 보고 블록 단위 수정안을 JSON으로 생성합니다.
 
-    블록 ref 형식: "<섹션코드>;<블록인덱스>"  예) "S1;0", "S1-2;3"
-    - ref 필드에서는 위 코드를 그대로 사용.
+      블록 ref 형식: "<섹션코드>;<블록인덱스>"  예) "S1;0", "S1-2;3"
+      - ref 필드에서는 위 코드를 그대로 사용.
 
-    액션: REWRITE (블록 전체 재작성) | REPLACE (substring 치환) | INSERT (아래에 삽입)
+      액션: REWRITE (블록 전체 재작성) | REPLACE (substring 치환) | INSERT (아래에 삽입)
 
-    ★★★ 빈 블록 처리 ★★★
-    대상 블록의 본문이 비어있거나(빈 문자열, 공백만) 사실상 placeholder 라면,
-    INSERT 대신 **REWRITE** 로 채우세요. INSERT 는 비어있지 않은 기존 블록 아래에
-    새 블록을 추가할 때만 사용합니다. 섹션 자체에 블록이 없을 때 새 본문을 넣는
-    경우도 REWRITE 로 처리합니다.
+      ★★★ 빈 블록 처리 ★★★
+      대상 블록의 본문이 비어있거나(빈 문자열, 공백만) 사실상 placeholder 라면,
+      INSERT 대신 **REWRITE** 로 채우세요. INSERT 는 비어있지 않은 기존 블록 아래에
+      새 블록을 추가할 때만 사용합니다. 섹션 자체에 블록이 없을 때 새 본문을 넣는
+      경우도 REWRITE 로 처리합니다.
 
-    ★★★ summary 필드 (각 edit마다 필수) ★★★
-    각 edit 에는 무엇을 어떻게 바꾸는지 한국어 1줄(20~60자) 요약을 `summary` 에 적습니다.
-    원본 본문을 그대로 옮겨 적지 말고 변경 의도/핵심만 적으세요.
-    - 예: "기존 한계점을 더 구체적으로 보완"
-    - 예: "이전 문단과의 연결 표현 추가"
-    - 예: "오타 수정 및 단위 표기 통일"
-    summary 는 history 직렬화 시 변경 내용과 별도로 노출되므로 매우 중요합니다.
+      ★★★ summary 필드 (각 edit마다 필수) ★★★
+      각 edit 에는 무엇을 어떻게 바꾸는지 한국어 1줄(20~60자) 요약을 `summary` 에 적습니다.
+      원본 본문을 그대로 옮겨 적지 말고 변경 의도/핵심만 적으세요.
+      - 예: "기존 한계점을 더 구체적으로 보완"
+      - 예: "이전 문단과의 연결 표현 추가"
+      - 예: "오타 수정 및 단위 표기 통일"
+      summary 는 history 직렬화 시 변경 내용과 별도로 노출되므로 매우 중요합니다.
 
-    ★★★ 블록당 액션 개수 규칙 ★★★
-    - REWRITE: 같은 블록(ref)에 대해 **반드시 1개만** 제안합니다. 여러 버전의 재작성안을 나열하지 마세요. 가장 적합한 단일 안을 고르세요.
-    - REPLACE: 같은 블록에 대해 서로 다른 substring을 치환하는 경우에 한해 N개 허용.
-    - INSERT: 같은 블록 아래 N개 삽입 허용.
-    - 같은 ref에 REWRITE와 REPLACE/INSERT를 섞지 마세요. REWRITE를 선택했다면 그 블록에는 REWRITE 1개만 둡니다.
+      ★★★ 블록당 액션 개수 규칙 ★★★
+      - REWRITE: 같은 블록(ref)에 대해 **반드시 1개만** 제안합니다. 여러 버전의 재작성안을 나열하지 마세요. 가장 적합한 단일 안을 고르세요.
+      - REPLACE: 같은 블록에 대해 서로 다른 substring을 치환하는 경우에 한해 N개 허용.
+      - INSERT: 같은 블록 아래 N개 삽입 허용.
+      - 같은 ref에 REWRITE와 REPLACE/INSERT를 섞지 마세요. REWRITE를 선택했다면 그 블록에는 REWRITE 1개만 둡니다.
 
-    ★★★ message(사용자에게 보여줄 응답) 작성 규칙 ★★★
-    절대로 'S1', 'S1-1', 'S1-2;0' 같은 내부 코드를 포함하지 마세요. 괄호로 묶어도 안 됩니다.
-    오직 섹션의 한국어 제목만 사용하세요.
+      ★★★ message(사용자에게 보여줄 응답) 작성 규칙 ★★★
+      절대로 'S1', 'S1-1', 'S1-2;0' 같은 내부 코드를 포함하지 마세요. 괄호로 묶어도 안 됩니다.
+      오직 섹션의 한국어 제목만 사용하세요.
 
-    ❌ 금지: "S1-2 (문제점) 섹션의 첫 번째 블록을 보완했습니다."
-    ✅ 권장: "'문제점' 섹션의 첫 번째 부분을 보완했습니다."
+      ❌ 금지: "S1-2 (문제점) 섹션의 첫 번째 블록을 보완했습니다."
+      ✅ 권장: "'문제점' 섹션의 첫 번째 부분을 보완했습니다."
 
-    미사용 필드는 반드시 null. 코드블록 없이 순수 JSON만 반환합니다.
+      미사용 필드는 반드시 null. 코드블록 없이 순수 JSON만 반환합니다.
 
-    ## 문서 블록
-    {{ doc_text }}{{ selected_ctx }}
+      ## 문서 블록
+      {{ doc_text }}{{ selected_ctx }}
+output_schema:
+  type: json_schema
+  json_schema: {"$defs": {"LLMEdit": {"description": "LLM이 직접 뱉는 평탄한 edit 모델 (서버에서 Edit으로 좁힌다).", "properties": {"ref": {"description": "블록 식별자. 예: \"S1;0\", \"S1-2;3\".", "title": "Ref", "type": "string"}, "action": {"enum": ["REWRITE", "REPLACE", "INSERT"], "title": "Action", "type": "string"}, "summary": {"default": "", "description": "이 수정이 무엇을 어떻게 바꾸는지 한국어 1줄 요약 (20~60자, 변경 의도/핵심만).", "title": "Summary", "type": "string"}, "value": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": null, "title": "Value"}, "value_type": {"anyOf": [{"enum": ["text", "equation", "table"], "type": "string"}, {"type": "null"}], "default": null, "title": "Value Type"}, "source": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": null, "title": "Source"}, "target": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": null, "title": "Target"}}, "required": ["ref", "action"], "title": "LLMEdit", "type": "object"}}, "properties": {"message": {"description": "사용자에게 보여줄 한국어 응답. 1~3문장. 'S1', 'S1-2;0' 같은 코드를 노출하지 말고 섹션의 실제 한국어 제목으로 지칭.", "title": "Message", "type": "string"}, "edits": {"items": {"$ref": "#/$defs/LLMEdit"}, "title": "Edits", "type": "array"}}, "required": ["message"], "title": "_LLMOut", "type": "object"}
+parameters:
+  provider: openai
+  name: Qwen3.6-35B-A3B
+  parameters:
+    temperature: 0.2
+    extra_body:
+      chat_template_kwargs:
+        enable_thinking: false
