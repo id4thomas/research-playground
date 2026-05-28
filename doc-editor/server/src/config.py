@@ -1,8 +1,11 @@
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_PROMPT_DIR = Path(__file__).resolve().parent / "prompts"
 
 
 class LLMClientConfig(BaseSettings):
@@ -37,6 +40,7 @@ class Settings(BaseSettings):
         env_nested_delimiter="__",
         extra="ignore",
     )
+    prompt_base_path: str = str(_PROMPT_DIR)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
     llm: LLMClientConfig = Field(default_factory=LLMClientConfig)
     tracing: TracingConfig = Field(default_factory=TracingConfig)
