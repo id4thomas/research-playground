@@ -1,7 +1,7 @@
 template_format: jinja2
 messages:
   - role: system
-    input_variables: [outline_text]
+    input_variables: [outline_text, history_text, instruction]
     content: |
       당신은 문서의 섹션 구조(헤더 트리)를 편집하는 에이전트입니다.
       현재 outline을 보고 RENAME / ADD / REMOVE / MERGE 네 가지 액션을 JSON으로 생성하세요.
@@ -26,14 +26,74 @@ messages:
 
       ## 현재 Outline
       {{ outline_text }}
-output_schema:
-  type: json_schema
-  json_schema: {"$defs": {"OutlineAction": {"description": "Section-tree mutation. v1: RENAME / ADD / REMOVE / MERGE.", "properties": {"action": {"enum": ["RENAME", "ADD", "REMOVE", "MERGE"], "title": "Action", "type": "string"}, "target": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": null, "title": "Target"}, "targets": {"anyOf": [{"items": {"type": "string"}, "type": "array"}, {"type": "null"}], "default": null, "title": "Targets"}, "title": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": null, "title": "Title"}, "level": {"anyOf": [{"type": "integer"}, {"type": "null"}], "default": null, "title": "Level"}, "position": {"anyOf": [{"type": "integer"}, {"type": "null"}], "default": null, "title": "Position"}}, "required": ["action"], "title": "OutlineAction", "type": "object"}}, "properties": {"message": {"description": "사용자에게 보여줄 한국어 응답. 어떤 섹션 변경을 왜 제안했는지 1~3문장. 'S1', 'S1-2' 같은 내부 코드를 노출하지 말고 섹션 제목으로 지칭.", "title": "Message", "type": "string"}, "outline_actions": {"items": {"$ref": "#/$defs/OutlineAction"}, "title": "Outline Actions", "type": "array"}}, "required": ["message"], "title": "_LLMOut", "type": "object"}
-parameters:
+
+      ## 이전 대화 (맥락 참고용)
+      {{ history_text }}
+
+      ## 사용자 구조 변경 지시
+      아래 지시에 따라 섹션 구조 변경 액션을 생성하세요.
+      {{ instruction }}
+generation_config:
   provider: openai
-  name: Qwen3.6-35B-A3B
+  model_name: Qwen3.6-35B-A3B
   parameters:
     temperature: 0
-    extra_body:
-      chat_template_kwargs:
-        enable_thinking: false
+output_schema:
+  type: json_schema
+  json_schema:
+    title: _LLMOut
+    type: object
+    required: [message]
+    properties:
+      message:
+        type: string
+        title: Message
+        description: 사용자에게 보여줄 한국어 응답. 어떤 섹션 변경을 왜 제안했는지 1~3문장. 'S1', 'S1-2' 같은 내부 코드를 노출하지 말고 섹션 제목으로 지칭.
+      outline_actions:
+        type: array
+        title: Outline Actions
+        items:
+          $ref: "#/$defs/OutlineAction"
+    $defs:
+      OutlineAction:
+        type: object
+        title: OutlineAction
+        description: "Section-tree mutation. v1: RENAME / ADD / REMOVE / MERGE."
+        required: [action]
+        properties:
+          action:
+            type: string
+            title: Action
+            enum: [RENAME, ADD, REMOVE, MERGE]
+          target:
+            title: Target
+            default: null
+            anyOf:
+              - type: string
+              - type: "null"
+          targets:
+            title: Targets
+            default: null
+            anyOf:
+              - type: array
+                items:
+                  type: string
+              - type: "null"
+          title:
+            title: Title
+            default: null
+            anyOf:
+              - type: string
+              - type: "null"
+          level:
+            title: Level
+            default: null
+            anyOf:
+              - type: integer
+              - type: "null"
+          position:
+            title: Position
+            default: null
+            anyOf:
+              - type: integer
+              - type: "null"

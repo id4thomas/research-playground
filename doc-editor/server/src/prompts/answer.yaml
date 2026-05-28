@@ -1,7 +1,7 @@
 template_format: jinja2
 messages:
   - role: system
-    input_variables: [outline_text, body_text]
+    input_variables: [outline_text, body_text, history_text, instruction]
     content: |
       당신은 문서 편집 어시스턴트입니다. 사용자의 질문에 1~5문장으로 한국어로 답하세요.
       - 문서 내용 기반 질문이면 outline과 대화 맥락을 활용.
@@ -14,13 +14,17 @@ messages:
       ## 참고 본문
       {{ body_text }}
       {% endif %}
-output_schema:
-  type: text
-parameters:
+
+      ## 이전 대화 (맥락 참고용)
+      {{ history_text }}
+
+      ## 사용자 질문
+      아래 질문에 답하세요.
+      {{ instruction }}
+generation_config:
   provider: openai
-  name: Qwen3.6-35B-A3B
+  model_name: Qwen3.6-35B-A3B
   parameters:
     temperature: 0.3
-    extra_body:
-      chat_template_kwargs:
-        enable_thinking: false
+output_schema:
+  type: text

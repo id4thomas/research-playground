@@ -1,7 +1,7 @@
 template_format: jinja2
 messages:
   - role: system
-    input_variables: [outline_text, selected_text]
+    input_variables: [outline_text, selected_text, history_text, instruction]
     content: |
       당신은 문서 편집 어시스턴트의 Clarify 에이전트입니다.
       사용자의 요청이 모호하여 다음 행동을 결정할 수 없을 때, 사용자가 빠르게 선택해
@@ -28,14 +28,32 @@ messages:
 
       ## 선택된 블록
       {{ selected_text }}
-output_schema:
-  type: json_schema
-  json_schema: {"properties": {"question": {"description": "사용자에게 보여줄 한국어 질문. 1~2문장. 모호한 요청을 좁히기 위한 질문.", "title": "Question", "type": "string"}, "options": {"description": "사용자가 클릭만으로 답할 수 있는 2~4개의 짧은 한국어 보기. 각 항목은 그대로 후속 요청으로 사용된다.", "items": {"type": "string"}, "title": "Options", "type": "array"}}, "required": ["question"], "title": "_LLMOut", "type": "object"}
-parameters:
+
+      ## 이전 대화 (맥락 참고용)
+      {{ history_text }}
+
+      ## 명확화할 사용자 지시
+      아래 모호한 지시에 대해 질문과 보기를 생성하세요.
+      {{ instruction }}
+generation_config:
   provider: openai
-  name: Qwen3.6-35B-A3B
+  model_name: Qwen3.6-35B-A3B
   parameters:
     temperature: 0.2
-    extra_body:
-      chat_template_kwargs:
-        enable_thinking: false
+output_schema:
+  type: json_schema
+  json_schema:
+    title: _LLMOut
+    type: object
+    required: [question]
+    properties:
+      question:
+        type: string
+        title: Question
+        description: 사용자에게 보여줄 한국어 질문. 1~2문장. 모호한 요청을 좁히기 위한 질문.
+      options:
+        type: array
+        title: Options
+        description: 사용자가 클릭만으로 답할 수 있는 2~4개의 짧은 한국어 보기. 각 항목은 그대로 후속 요청으로 사용된다.
+        items:
+          type: string

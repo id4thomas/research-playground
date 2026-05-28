@@ -61,14 +61,14 @@ class MessageTemplate(BaseModel):
     )
 
 
-class GenerationParameters(BaseModel):
+class GenerationConfig(BaseModel):
     """Model info and generation parameters."""
 
     provider: str = Field(
         ...,
         description="Model provider (e.g. openai / anthropic / gemini)",
     )
-    name: str = Field(..., description="Model name")
+    model_name: str = Field(..., description="Model name")
     parameters: dict[str, Any] = Field(
         default_factory=dict,
         description="Extra generation parameters",
@@ -98,27 +98,28 @@ class PromptTemplate(BaseModel):
         default_factory=list, description="List of message templates"
     )
     output_schema: OutputSchema | None = Field(None, description="Output schema")
-    parameters: GenerationParameters | None = Field(
+    generation_config: GenerationConfig | None = Field(
         None, description="Model and generation parameters"
     )
 
-    def fill_template(self, contents: dict[str, str]) -> list[MessageTemplate]:
-        """Fill each message's content with the given variables.
+    def fill_template(self, contents: dict[str, str]) -> list[dict[str, str]]:
+        """Render each message and return chat-ready `{"role", "content"}` dicts.
 
         Args:
             contents: Mapping of variable name -> value.
 
         Returns:
-            New message templates with rendered content (originals untouched).
+            Message dicts with rendered content, in template order. Ready to
+            pass straight to a model — callers don't reshape the result.
         """
         formatter = FORMATTERS[self.template_format]
 
-        filled = []
-        for message_template in self.messages:
-            message = message_template.model_copy()
-            message.content = formatter.render(
-                text=message.content, variables=contents
-            )
-            filled.append(message)
-
-        return filled
+        return [
+            {
+                "role": message_template.role,
+                "content": formatter.render(
+                    text=message_template.content, variables=contents
+                ),
+            }
+            for message_template in self.messages
+        ]

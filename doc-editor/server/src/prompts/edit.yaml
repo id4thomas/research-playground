@@ -1,7 +1,7 @@
 template_format: jinja2
 messages:
   - role: system
-    input_variables: [doc_text, selected_ctx]
+    input_variables: [doc_text, selected_ctx, history_text, instruction]
     content: |
       당신은 범용 문서 편집 어시스턴트입니다.
       문서 섹션(블록 목록)과 사용자 요청을 보고 블록 단위 수정안을 JSON으로 생성합니다.
@@ -42,14 +42,76 @@ messages:
 
       ## 문서 블록
       {{ doc_text }}{{ selected_ctx }}
-output_schema:
-  type: json_schema
-  json_schema: {"$defs": {"LLMEdit": {"description": "LLM이 직접 뱉는 평탄한 edit 모델 (서버에서 Edit으로 좁힌다).", "properties": {"ref": {"description": "블록 식별자. 예: \"S1;0\", \"S1-2;3\".", "title": "Ref", "type": "string"}, "action": {"enum": ["REWRITE", "REPLACE", "INSERT"], "title": "Action", "type": "string"}, "summary": {"default": "", "description": "이 수정이 무엇을 어떻게 바꾸는지 한국어 1줄 요약 (20~60자, 변경 의도/핵심만).", "title": "Summary", "type": "string"}, "value": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": null, "title": "Value"}, "value_type": {"anyOf": [{"enum": ["text", "equation", "table"], "type": "string"}, {"type": "null"}], "default": null, "title": "Value Type"}, "source": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": null, "title": "Source"}, "target": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": null, "title": "Target"}}, "required": ["ref", "action"], "title": "LLMEdit", "type": "object"}}, "properties": {"message": {"description": "사용자에게 보여줄 한국어 응답. 1~3문장. 'S1', 'S1-2;0' 같은 코드를 노출하지 말고 섹션의 실제 한국어 제목으로 지칭.", "title": "Message", "type": "string"}, "edits": {"items": {"$ref": "#/$defs/LLMEdit"}, "title": "Edits", "type": "array"}}, "required": ["message"], "title": "_LLMOut", "type": "object"}
-parameters:
+
+      ## 이전 대화 (맥락 참고용)
+      {{ history_text }}
+
+      ## 사용자 수정 지시
+      아래 지시에 따라 블록 수정안을 생성하세요.
+      {{ instruction }}
+generation_config:
   provider: openai
-  name: Qwen3.6-35B-A3B
+  model_name: Qwen3.6-35B-A3B
   parameters:
     temperature: 0.2
-    extra_body:
-      chat_template_kwargs:
-        enable_thinking: false
+output_schema:
+  type: json_schema
+  json_schema:
+    title: _LLMOut
+    type: object
+    required: [message]
+    properties:
+      message:
+        type: string
+        title: Message
+        description: 사용자에게 보여줄 한국어 응답. 1~3문장. 'S1', 'S1-2;0' 같은 코드를 노출하지 말고 섹션의 실제 한국어 제목으로 지칭.
+      edits:
+        type: array
+        title: Edits
+        items:
+          $ref: "#/$defs/LLMEdit"
+    $defs:
+      LLMEdit:
+        type: object
+        title: LLMEdit
+        description: LLM이 직접 뱉는 평탄한 edit 모델 (서버에서 Edit으로 좁힌다).
+        required: [ref, action]
+        properties:
+          ref:
+            type: string
+            title: Ref
+            description: '블록 식별자. 예: "S1;0", "S1-2;3".'
+          action:
+            type: string
+            title: Action
+            enum: [REWRITE, REPLACE, INSERT]
+          summary:
+            type: string
+            title: Summary
+            default: ""
+            description: 이 수정이 무엇을 어떻게 바꾸는지 한국어 1줄 요약 (20~60자, 변경 의도/핵심만).
+          value:
+            title: Value
+            default: null
+            anyOf:
+              - type: string
+              - type: "null"
+          value_type:
+            title: Value Type
+            default: null
+            anyOf:
+              - type: string
+                enum: [text, equation, table]
+              - type: "null"
+          source:
+            title: Source
+            default: null
+            anyOf:
+              - type: string
+              - type: "null"
+          target:
+            title: Target
+            default: null
+            anyOf:
+              - type: string
+              - type: "null"

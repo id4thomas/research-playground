@@ -1,7 +1,7 @@
 template_format: jinja2
 messages:
   - role: system
-    input_variables: [outline_text, selected_text]
+    input_variables: [outline_text, selected_text, history_text, instruction]
     content: |
       당신은 문서 편집 어시스턴트의 Intent Router입니다.
       사용자 메시지와 문서 outline을 보고 아래 intent 중 하나만 선택하세요.
@@ -53,14 +53,41 @@ messages:
 
       ## 선택된 블록
       {{ selected_text }}
-output_schema:
-  type: json_schema
-  json_schema: {"properties": {"intent": {"enum": ["edit", "restructure", "clarify", "answer"], "title": "Intent", "type": "string"}, "target_sections": {"items": {"type": "string"}, "title": "Target Sections", "type": "array"}, "suggest_new_session": {"default": false, "title": "Suggest New Session", "type": "boolean"}, "suggest_new_session_reason": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": null, "title": "Suggest New Session Reason"}}, "required": ["intent"], "title": "_LLMOut", "type": "object"}
-parameters:
+
+      ## 이전 대화 (맥락 참고용)
+      {{ history_text }}
+
+      ## 분류할 사용자 지시
+      아래 지시의 의도를 분석하여 intent를 결정하세요.
+      {{ instruction }}
+generation_config:
   provider: openai
-  name: Qwen3.6-35B-A3B
+  model_name: Qwen3.6-35B-A3B
   parameters:
     temperature: 0
-    extra_body:
-      chat_template_kwargs:
-        enable_thinking: false
+output_schema:
+  type: json_schema
+  json_schema:
+    title: _LLMOut
+    type: object
+    required: [intent]
+    properties:
+      intent:
+        type: string
+        title: Intent
+        enum: [edit, restructure, clarify, answer]
+      target_sections:
+        type: array
+        title: Target Sections
+        items:
+          type: string
+      suggest_new_session:
+        type: boolean
+        title: Suggest New Session
+        default: false
+      suggest_new_session_reason:
+        title: Suggest New Session Reason
+        default: null
+        anyOf:
+          - type: string
+          - type: "null"

@@ -1,7 +1,7 @@
 template_format: jinja2
 messages:
   - role: system
-    input_variables: [outline_text, selected_text, hint_text]
+    input_variables: [outline_text, selected_text, hint_text, history_text, instruction]
     content: |
       당신은 문서 편집 어시스턴트의 컨텍스트 수집기입니다.
       사용자 요청과 문서 outline을 보고, 후속 액션 노드가 실제 블록 내용을 봐야 할
@@ -23,14 +23,34 @@ messages:
 
       ## 인텐트 라우터의 후보 섹션 (참고)
       {{ hint_text }}
-output_schema:
-  type: json_schema
-  json_schema: {"properties": {"section_codes": {"description": "이번 요청을 처리하기 위해 본문을 봐야 하는 섹션 코드 목록. outline에 존재하는 코드만 사용.", "items": {"type": "string"}, "title": "Section Codes", "type": "array"}, "reasoning": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": null, "description": "간단한 이유 (디버깅용).", "title": "Reasoning"}}, "title": "_LLMOut", "type": "object"}
-parameters:
+
+      ## 이전 대화 (맥락 참고용)
+      {{ history_text }}
+
+      ## 사용자 지시
+      아래 지시를 처리하는 데 필요한 섹션을 선정하세요.
+      {{ instruction }}
+generation_config:
   provider: openai
-  name: Qwen3.6-35B-A3B
+  model_name: Qwen3.6-35B-A3B
   parameters:
     temperature: 0
-    extra_body:
-      chat_template_kwargs:
-        enable_thinking: false
+output_schema:
+  type: json_schema
+  json_schema:
+    title: _LLMOut
+    type: object
+    properties:
+      section_codes:
+        type: array
+        title: Section Codes
+        description: 이번 요청을 처리하기 위해 본문을 봐야 하는 섹션 코드 목록. outline에 존재하는 코드만 사용.
+        items:
+          type: string
+      reasoning:
+        title: Reasoning
+        default: null
+        description: 간단한 이유 (디버깅용).
+        anyOf:
+          - type: string
+          - type: "null"
