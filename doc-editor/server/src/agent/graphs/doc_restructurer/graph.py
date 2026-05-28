@@ -5,17 +5,17 @@ START → restructure → assemble → END
 """
 from typing import Annotated
 
-from langgraph.graph import StateGraph, START, END
-from langgraph.graph.state import CompiledStateGraph
-from langgraph.graph.message import add_messages
 from langchain_core.messages import BaseMessage
+from langgraph.graph import StateGraph, START, END
+from langgraph.graph.message import add_messages
+from langgraph.graph.state import CompiledStateGraph
 from typing_extensions import TypedDict
 
 from agent.base import BaseAgent
 from agent.graphs.doc_assistant.states import FinalOutput
 from agent.graphs.doc_restructurer.nodes.assemble import restructure_assemble_node
 from agent.graphs.doc_restructurer.nodes.restructure import restructure_node
-from agent.modules.restructure_generate import RestructureGenerateOutput
+from agent.operations import RestructureGenerateOutput
 from core.data import Document
 
 

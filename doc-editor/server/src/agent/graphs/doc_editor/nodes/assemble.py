@@ -1,18 +1,19 @@
-"""Edit assemble node — converts edit_generate output into FinalOutput."""
-from agent.graphs.doc_assistant.states import FinalOutput
-from agent.modules.edit_assemble import edits_to_map
-from agent.modules.strip_codes import strip_section_codes
-from agent.nodes.base import BaseNode
+"""Edit assemble node — converts edit output into FinalOutput."""
+from langchain_core.runnables import RunnableConfig
+
+from agent.base import BaseNode
+from agent.graphs.doc_assistant.states import AgentState, FinalOutput
+from agent.operations import EditAssembleOperation, StripCodesOperation
 
 
 class EditAssembleNode(BaseNode):
     name = "edit_assemble"
 
-    async def run(self, state: dict) -> dict:
+    async def run(self, state: AgentState, config: RunnableConfig) -> dict:
         edit_out = state.get("edit")
         doc = state["document"]
-        edits_map = edits_to_map(edit_out.edits) if edit_out else {}
-        message = strip_section_codes((edit_out.message if edit_out else "") or "", doc)
+        edits_map = await EditAssembleOperation.run(edit_out.edits) if edit_out else {}
+        message = await StripCodesOperation.run((edit_out.message if edit_out else "") or "", doc)
         return {"final": FinalOutput(message=message, edits=edits_map)}
 
 

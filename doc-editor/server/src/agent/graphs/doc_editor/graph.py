@@ -4,20 +4,22 @@ START → context_collector → edit → assemble → END
 """
 from typing import Annotated
 
-from langgraph.graph import StateGraph, START, END
-from langgraph.graph.state import CompiledStateGraph
-from langgraph.graph.message import add_messages
 from langchain_core.messages import BaseMessage
+from langgraph.graph import StateGraph, START, END
+from langgraph.graph.message import add_messages
+from langgraph.graph.state import CompiledStateGraph
 from typing_extensions import TypedDict
 
 from agent.base import BaseAgent
 from agent.graphs.doc_assistant.states import FinalOutput
 from agent.graphs.doc_editor.nodes.assemble import edit_assemble_node
+from agent.graphs.doc_editor.nodes.context_collector import context_collector_node
 from agent.graphs.doc_editor.nodes.edit import edit_node
-from agent.modules.context_collect import ContextCollectOutput
-from agent.modules.edit_generate import EditGenerateOutput
-from agent.modules.intent_classify import IntentClassifyOutput
-from agent.nodes.context_collector import context_collector_node
+from agent.operations import (
+    ContextCollectOutput,
+    EditGenerateOutput,
+    IntentClassifyOutput,
+)
 from core.data import Document
 
 

@@ -1,7 +1,6 @@
-"""Shared helpers for converting LLM edit payloads to the API Edit shape."""
+"""Convert LLM edit payloads to the API Edit shape."""
+from agent.base import BaseOperation
 from core.data import Block, Edit, InsertEdit, LLMEdit, ReplaceEdit, RewriteEdit
-
-__all__ = ["llm_edit_to_api", "edits_to_map", "enforce_action_rules_map"]
 
 
 def llm_edit_to_api(le: LLMEdit) -> Edit | None:
@@ -17,15 +16,6 @@ def llm_edit_to_api(le: LLMEdit) -> Edit | None:
     return None
 
 
-def edits_to_map(llm_edits: list[LLMEdit]) -> dict[str, list[Edit]]:
-    out: dict[str, list[Edit]] = {}
-    for le in llm_edits:
-        api = llm_edit_to_api(le)
-        if api:
-            out.setdefault(le.ref, []).append(api)
-    return enforce_action_rules_map(out)
-
-
 def enforce_action_rules_map(edits_map: dict[str, list[Edit]]) -> dict[str, list[Edit]]:
     """ref당 REWRITE는 1개. REWRITE가 있으면 그 ref의 REPLACE/INSERT는 제거."""
     out: dict[str, list[Edit]] = {}
@@ -33,3 +23,14 @@ def enforce_action_rules_map(edits_map: dict[str, list[Edit]]) -> dict[str, list
         rewrites = [e for e in lst if isinstance(e, RewriteEdit)]
         out[ref] = [rewrites[0]] if rewrites else lst
     return out
+
+
+class EditAssembleOperation(BaseOperation):
+    @classmethod
+    async def run(cls, llm_edits: list[LLMEdit]) -> dict[str, list[Edit]]:
+        out: dict[str, list[Edit]] = {}
+        for le in llm_edits:
+            api = llm_edit_to_api(le)
+            if api:
+                out.setdefault(le.ref, []).append(api)
+        return enforce_action_rules_map(out)

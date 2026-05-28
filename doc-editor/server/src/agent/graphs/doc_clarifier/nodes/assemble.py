@@ -1,21 +1,23 @@
 """Clarify assemble node — converts clarify output into FinalOutput."""
-from agent.graphs.doc_assistant.states import FinalOutput
-from agent.modules.strip_codes import strip_section_codes
-from agent.nodes.base import BaseNode
+from langchain_core.runnables import RunnableConfig
+
+from agent.base import BaseNode
+from agent.graphs.doc_assistant.states import AgentState, FinalOutput
+from agent.operations import StripCodesOperation
 
 
 class ClarifyAssembleNode(BaseNode):
     name = "clarify_assemble"
 
-    async def run(self, state: dict) -> dict:
+    async def run(self, state: AgentState, config: RunnableConfig) -> dict:
         out = state.get("clarify")
         doc = state["document"]
         msg = (out.question if out else None) or "어떤 부분을 도와드릴까요?"
         opts = list(out.options) if out else []
         return {
             "final": FinalOutput(
-                message=strip_section_codes(msg, doc),
-                clarify_options=[strip_section_codes(o, doc) for o in opts],
+                message=await StripCodesOperation.run(msg, doc),
+                clarify_options=[await StripCodesOperation.run(o, doc) for o in opts],
             )
         }
 

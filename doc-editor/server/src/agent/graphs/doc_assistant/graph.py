@@ -8,9 +8,7 @@ START → intent_router → (route) → one of:
 → END
 
 각 서브그래프는 자체적으로 `final` (FinalOutput)을 부모 상태에 쓴다. doc_assistant는
-오직 intent 분류 + 라우팅만 담당한다. intent_router는 더 이상 clarify 문구를
-생성하지 않으며, clarify 분기일 때는 doc_clarifier 서브그래프가 LLM 호출로
-질문/보기를 별도로 만든다.
+오직 intent 분류 + 라우팅만 담당한다.
 """
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.state import CompiledStateGraph
