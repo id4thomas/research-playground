@@ -1,0 +1,37 @@
+services:
+  server:
+    build:
+      context: ./server
+    image: doc-editor-server
+    container_name: doc-editor-server
+    environment:
+      # LLM (OpenAI-compatible endpoint) — 호스트의 901 포트
+      LLM__BASE_URL: http://host.docker.internal:901/v1
+      LLM__API_KEY: EMPTY
+      LLM__MODEL: Qwen3.6-35B-A3B
+      # MLflow tracing — 호스트의 7000 포트
+      # NOTE: 컨테이너에서 host.docker.internal:7000(=docker bridge gateway)로
+      # 접근하려면 호스트 방화벽에서 docker subnet -> 7000 을 허용해야 한다.
+      TRACING__ENABLED: "true"
+      TRACING__URI: http://host.docker.internal:7000
+      TRACING__EXPERIMENT: 2605-doc-editor
+      # Logging
+      LOGGING__LOG_LEVEL: info
+      LOGGING__FORMAT: console
+    # Linux에서 컨테이너가 host.docker.internal 로 호스트에 접근하도록 매핑
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${SERVER_PORT:-5000}:5000"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+    image: doc-editor-frontend
+    container_name: doc-editor-frontend
+    depends_on:
+      - server
+    ports:
+      - "${FRONTEND_PORT:-9051}:80"
+    restart: unless-stopped

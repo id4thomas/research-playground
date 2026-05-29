@@ -10,7 +10,7 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN pip install -r requirements.txt
 
-# Copy application code
+# Copy application code (prompts live under src/prompts/)
 COPY src/ ./src/
 COPY run.sh ./
 
