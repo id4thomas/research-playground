@@ -3,28 +3,13 @@
 START → restructure → assemble → END
 (컨텍스트 수집 불필요: outline만으로 충분)
 """
-from typing import Annotated
-
-from langchain_core.messages import BaseMessage
 from langgraph.graph import StateGraph, START, END
-from langgraph.graph.message import add_messages
 from langgraph.graph.state import CompiledStateGraph
-from typing_extensions import TypedDict
 
 from agent.base import BaseAgent
-from agent.graphs.doc_assistant.states import FinalOutput
 from agent.graphs.doc_restructurer.nodes.assemble import restructure_assemble_node
 from agent.graphs.doc_restructurer.nodes.restructure import restructure_node
-from agent.operations import RestructureGenerateOutput
-from core.data import Document
-
-
-class RestructurerState(TypedDict, total=False):
-    messages: Annotated[list[BaseMessage], add_messages]
-    document: Document
-    selected: list[str] | None
-    restructure: RestructureGenerateOutput
-    final: FinalOutput
+from agent.graphs.doc_restructurer.states import RestructurerState
 
 
 def build_restructurer_graph() -> CompiledStateGraph:

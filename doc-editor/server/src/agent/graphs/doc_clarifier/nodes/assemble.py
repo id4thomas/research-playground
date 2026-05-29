@@ -2,14 +2,15 @@
 from langchain_core.runnables import RunnableConfig
 
 from agent.base import BaseNode
-from agent.graphs.doc_assistant.states import AgentState, FinalOutput
+from agent.graphs.doc_assistant.states import FinalOutput
+from agent.graphs.doc_clarifier.states import ClarifierState
 from agent.operations import StripCodesOperation
 
 
 class ClarifyAssembleNode(BaseNode):
     name = "clarify_assemble"
 
-    async def run(self, state: AgentState, config: RunnableConfig) -> dict:
+    async def run(self, state: ClarifierState, config: RunnableConfig) -> dict:
         out = state.get("clarify")
         doc = state["document"]
         msg = (out.question if out else None) or "어떤 부분을 도와드릴까요?"

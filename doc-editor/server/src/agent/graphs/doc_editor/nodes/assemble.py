@@ -2,14 +2,15 @@
 from langchain_core.runnables import RunnableConfig
 
 from agent.base import BaseNode
-from agent.graphs.doc_assistant.states import AgentState, FinalOutput
+from agent.graphs.doc_assistant.states import FinalOutput
+from agent.graphs.doc_editor.states import EditorState
 from agent.operations import EditAssembleOperation, StripCodesOperation
 
 
 class EditAssembleNode(BaseNode):
     name = "edit_assemble"
 
-    async def run(self, state: AgentState, config: RunnableConfig) -> dict:
+    async def run(self, state: EditorState, config: RunnableConfig) -> dict:
         edit_out = state.get("edit")
         doc = state["document"]
         edits_map = await EditAssembleOperation.run(edit_out.edits) if edit_out else {}

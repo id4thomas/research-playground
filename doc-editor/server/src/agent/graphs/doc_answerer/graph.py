@@ -2,35 +2,14 @@
 
 START → context_collector → answer → assemble → END
 """
-from typing import Annotated
-
-from langchain_core.messages import BaseMessage
 from langgraph.graph import StateGraph, START, END
-from langgraph.graph.message import add_messages
 from langgraph.graph.state import CompiledStateGraph
-from typing_extensions import TypedDict
 
 from agent.base import BaseAgent
 from agent.graphs.doc_answerer.nodes.answer import answer_node
 from agent.graphs.doc_answerer.nodes.assemble import answer_assemble_node
 from agent.graphs.doc_answerer.nodes.context_collector import context_collector_node
-from agent.graphs.doc_assistant.states import FinalOutput
-from agent.operations import (
-    AnswerGenerateOutput,
-    ContextCollectOutput,
-    IntentClassifyOutput,
-)
-from core.data import Document
-
-
-class AnswererState(TypedDict, total=False):
-    messages: Annotated[list[BaseMessage], add_messages]
-    document: Document
-    selected: list[str] | None
-    intent_router: IntentClassifyOutput
-    context: ContextCollectOutput
-    answer: AnswerGenerateOutput
-    final: FinalOutput
+from agent.graphs.doc_answerer.states import AnswererState
 
 
 def build_answerer_graph() -> CompiledStateGraph:

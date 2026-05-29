@@ -2,14 +2,14 @@
 from langchain_core.runnables import RunnableConfig
 
 from agent.base import BaseNode, split_instruction_history
-from agent.graphs.doc_assistant.states import AgentState
+from agent.graphs.doc_answerer.states import AnswererState
 from agent.operations import AnswerGenerateOperation
 
 
 class AnswerNode(BaseNode):
     name = "answer"
 
-    async def run(self, state: AgentState, config: RunnableConfig) -> dict:
+    async def run(self, state: AnswererState, config: RunnableConfig) -> dict:
         instruction, history = split_instruction_history(state["messages"])
         ctx = state.get("context")
         section_codes = ctx.section_codes if ctx else None
