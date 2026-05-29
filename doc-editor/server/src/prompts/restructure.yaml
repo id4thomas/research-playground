@@ -1,6 +1,6 @@
 template_format: jinja2
 messages:
-  - role: system
+  - role: user
     input_variables: [outline_text, history_text, instruction]
     content: |
       당신은 문서의 섹션 구조(헤더 트리)를 편집하는 에이전트입니다.

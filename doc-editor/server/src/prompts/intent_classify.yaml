@@ -1,6 +1,6 @@
 template_format: jinja2
 messages:
-  - role: system
+  - role: user
     input_variables: [outline_text, selected_text, history_text, instruction]
     content: |
       당신은 문서 편집 어시스턴트의 Intent Router입니다.
