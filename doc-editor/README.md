@@ -89,6 +89,9 @@ outline 예시:
 | `restructure` | 섹션 이름·계층 변경 요청 (본문 변경 없음) | → restructurer |
 | `clarify` | 요청이 모호하거나 사용자 선택이 필요할 때 | → clarifier (선택지 반환) |
 
+
+에이전트 구현 패턴은 [docs/agents.md](./docs/agents.md)에 기록되어 있다.
+
 ### Intent Router 분기 판단 예시
 
 ```
