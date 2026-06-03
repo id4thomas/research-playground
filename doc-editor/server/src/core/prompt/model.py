@@ -97,10 +97,8 @@ class PromptTemplate(BaseModel):
     messages: list[MessageTemplate] = Field(
         default_factory=list, description="List of message templates"
     )
+    generation_config: GenerationConfig= Field(..., description="Model and generation parameters")
     output_schema: OutputSchema | None = Field(None, description="Output schema")
-    generation_config: GenerationConfig | None = Field(
-        None, description="Model and generation parameters"
-    )
 
     def fill_template(self, contents: dict[str, str]) -> list[dict[str, str]]:
         """Render each message and return chat-ready `{"role", "content"}` dicts.
