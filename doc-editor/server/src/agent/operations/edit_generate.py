@@ -35,14 +35,15 @@ def _target_sections(document: Document, target_sections: list[str] | None):
 def render_document(document: Document, target_sections: list[str] | None) -> str:
     """편집 대상 블록을 UUID와 함께 렌더한다.
 
-    각 블록은 `[<block uuid>] (type) content` 형태로 표기되며, LLM은 수정 대상 블록의
-    UUID를 그대로 `ref` 에 적는다 (ref enum 으로 유효 id만 허용됨).
+    각 블록은 `[<block uuid>] (type:format) content` 형태로 표기되며, LLM은 수정 대상
+    블록의 UUID를 그대로 `ref` 에 적는다 (ref enum 으로 유효 id만 허용됨). format 은
+    콘텐츠 표현 방식(markdown/html/tex)으로, 재작성 시 같은 format 문법을 유지한다.
     """
     parts = []
     for code, section in _target_sections(document, target_sections):
         parts.append(f"\n### {section.meta.title} ({code})")
         for b in section.ordered_blocks():
-            parts.append(f"[{b.id}] ({b.type}) {b.content}")
+            parts.append(f"[{b.id}] ({b.type}:{b.format}) {b.content}")
     return "\n".join(parts)
 
 

@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { DocumentT, EditEntry } from "../types";
 import { previewBlock } from "../lib/edits";
 import { diffWords } from "../lib/diff";
+import { BlockRender } from "./BlockView";
 
 type Props = {
   doc: DocumentT;
@@ -32,8 +33,10 @@ export function DiffPopup({ doc, entries, onAccept, onDecline, onInstruct }: Pro
       </div>
       {validIndices.map(({ entry, i }) => {
         const { ref, edit, status } = entry;
-        const { before, after, kind } = previewBlock(doc, ref, edit);
+        const { before, after, kind, afterBlock } = previewBlock(doc, ref, edit);
         const parts = diffWords(before, after);
+        // 일반 텍스트(markdown)는 word-diff 로 충분 — 표/수식/html 은 렌더 미리보기를 덧붙인다.
+        const showRendered = !(afterBlock.type === "text" && afterBlock.format === "markdown");
 
         const wrapperCls =
           status === "accepted"
@@ -92,6 +95,14 @@ export function DiffPopup({ doc, entries, onAccept, onDecline, onInstruct }: Pro
                   )}
               </div>
             </div>
+            {showRendered && (
+              <div>
+                <div className="text-[10px] text-slate-500 mb-0.5">렌더 미리보기 · {afterBlock.type}:{afterBlock.format}</div>
+                <div className="bg-white border border-slate-200 rounded px-2 py-1 overflow-x-auto">
+                  <BlockRender block={afterBlock} />
+                </div>
+              </div>
+            )}
             <StatusFooter
               status={status}
               instruction={entry.instruction}

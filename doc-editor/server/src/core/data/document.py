@@ -32,18 +32,23 @@ def new_block_id() -> str:
 class _BaseBlock(BaseModel):
     id: str = Field(default_factory=new_block_id)
     content: str = ""
+    # 콘텐츠 표현 포맷. 허용값은 블록 타입마다 다르므로 각 서브클래스에서 Literal로 좁힌다.
+    format: str = ""
 
 
 class TextBlock(_BaseBlock):
     type: Literal["text"] = "text"
+    format: Literal["markdown", "html"] = "markdown"
 
 
 class TableBlock(_BaseBlock):
     type: Literal["table"] = "table"
+    format: Literal["markdown", "html"] = "html"
 
 
 class EquationBlock(_BaseBlock):
     type: Literal["equation"] = "equation"
+    format: Literal["tex", "html"] = "tex"
 
 
 Block = Annotated[
@@ -51,13 +56,35 @@ Block = Annotated[
     Field(discriminator="type"),
 ]
 
+# 블록 타입별 (기본 format, 허용 format 집합).
+_DEFAULT_FORMAT = {"text": "markdown", "table": "html", "equation": "tex"}
+_ALLOWED_FORMAT = {
+    "text": {"markdown", "html"},
+    "table": {"markdown", "html"},
+    "equation": {"tex", "html"},
+}
 
-def make_block(block_type: str, content: str, *, id: str | None = None) -> Block:
-    """type 문자열로 적절한 Block 구체 타입을 생성한다."""
-    cls = {"text": TextBlock, "equation": EquationBlock, "table": TableBlock}.get(
-        block_type, TextBlock
-    )
-    return cls(content=content, **({"id": id} if id else {}))
+
+def make_block(
+    block_type: str,
+    content: str,
+    *,
+    id: str | None = None,
+    format: str | None = None,
+) -> Block:
+    """type 문자열로 적절한 Block 구체 타입을 생성한다.
+
+    format 을 주지 않거나 해당 타입에 허용되지 않는 값이면 타입별 기본값
+    (text=markdown, table=html, equation=tex)으로 대체한다.
+    """
+    block_type = block_type if block_type in _DEFAULT_FORMAT else "text"
+    cls = {"text": TextBlock, "equation": EquationBlock, "table": TableBlock}[block_type]
+    if format not in _ALLOWED_FORMAT[block_type]:
+        format = _DEFAULT_FORMAT[block_type]
+    kwargs: dict = {"content": content, "format": format}
+    if id:
+        kwargs["id"] = id
+    return cls(**kwargs)
 
 
 class SectionMeta(BaseModel):

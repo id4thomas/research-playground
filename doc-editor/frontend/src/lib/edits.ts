@@ -19,7 +19,7 @@ function splitTextValue(value: Block, keepId?: string): Block[] {
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
   if (parts.length <= 1) return [withId(value, true)];
-  return parts.map((content, i) => withId({ type: "text", content }, i === 0));
+  return parts.map((content, i) => withId({ type: "text", content, format: value.format }, i === 0));
 }
 
 /** order 의 `at` 위치에 블록들을 끼워넣은 새 (blocks, order) 를 만든다. */
@@ -48,7 +48,7 @@ export function applyEdit(doc: DocumentT, ref: string, edit: Edit): DocumentT {
     if (!section || !code) return doc;
     const parts =
       edit.action === "REWRITE"
-        ? splitTextValue({ id: ref, type: "text", content: edit.value })
+        ? splitTextValue({ id: ref, type: "text", content: edit.value, format: "markdown" })
         : splitTextValue(edit.value);
     const next = spliceBlocks(section, section.order.length, 0, parts);
     return { ...doc, sections: { ...doc.sections, [code]: next } };
@@ -81,26 +81,33 @@ export function applyEdit(doc: DocumentT, ref: string, edit: Edit): DocumentT {
   return { ...doc, sections: { ...doc.sections, [code]: next } };
 }
 
-export function previewBlock(
-  doc: DocumentT,
-  ref: string,
-  edit: Edit
-): { before: string; after: string; kind: "text" | "equation" | "table" | "new" } {
+export type PreviewResult = {
+  before: string;
+  after: string;
+  kind: "text" | "equation" | "table" | "new";
+  // 적용 후 결과 블록 (렌더 미리보기용). format 분기 렌더링에 사용.
+  afterBlock: Block;
+};
+
+export function previewBlock(doc: DocumentT, ref: string, edit: Edit): PreviewResult {
   const found = findBlock(doc, ref);
   const target = found ? found.section.blocks[ref] : undefined;
+  const newText = (content: string): Block => ({ id: ref, type: "text", content, format: "markdown" });
 
   if (edit.action === "INSERT") {
-    return { before: "", after: edit.value.content, kind: edit.value.type === "text" ? "new" : edit.value.type };
-  }
-  if (edit.action === "REPLACE") {
-    if (!target) return { before: "", after: edit.target, kind: "new" };
     return {
-      before: target.content,
-      after: target.content.split(edit.source).join(edit.target),
-      kind: target.type,
+      before: "",
+      after: edit.value.content,
+      kind: edit.value.type === "text" ? "new" : edit.value.type,
+      afterBlock: edit.value,
     };
   }
+  if (edit.action === "REPLACE") {
+    if (!target) return { before: "", after: edit.target, kind: "new", afterBlock: newText(edit.target) };
+    const after = target.content.split(edit.source).join(edit.target);
+    return { before: target.content, after, kind: target.type, afterBlock: { ...target, content: after } };
+  }
   // REWRITE
-  if (!target) return { before: "", after: edit.value, kind: "new" };
-  return { before: target.content, after: edit.value, kind: target.type };
+  if (!target) return { before: "", after: edit.value, kind: "new", afterBlock: newText(edit.value) };
+  return { before: target.content, after: edit.value, kind: target.type, afterBlock: { ...target, content: edit.value } };
 }

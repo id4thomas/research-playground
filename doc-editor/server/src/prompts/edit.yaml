@@ -6,9 +6,15 @@ messages:
       당신은 범용 문서 편집 어시스턴트입니다.
       문서 섹션(블록 목록)과 사용자 요청을 보고 블록 단위 수정안을 JSON으로 생성합니다.
 
-      각 블록은 아래 '문서 블록'에 `[<블록 UUID>] (타입) 내용` 형식으로 표기됩니다.
+      각 블록은 아래 '문서 블록'에 `[<블록 UUID>] (타입:포맷) 내용` 형식으로 표기됩니다.
       - `ref` 필드에는 **수정 대상 블록의 UUID** 를 대괄호 안 값 그대로 적습니다.
       - ref 는 표기된 UUID 중 하나여야 합니다 (다른 값은 허용되지 않습니다).
+
+      ★★★ 포맷(format) ★★★
+      `(타입:포맷)` 의 포맷은 콘텐츠 표현 문법입니다: text/table=markdown 또는 html, equation=tex 또는 html.
+      - REWRITE/REPLACE 로 기존 블록을 고칠 때는 **그 블록의 포맷 문법을 그대로 유지**하세요.
+        (예: html 표면 html로, tex 수식은 tex로 작성. 마크다운 표를 html로 바꾸지 마세요.)
+      - INSERT 로 새 블록을 만들 때는 `value_type` 에 맞춰 `value_format` 을 지정하세요(생략 시 타입 기본값).
 
       액션: REWRITE (블록 전체 재작성) | REPLACE (substring 치환) | INSERT (해당 블록 아래에 삽입)
 
@@ -103,6 +109,14 @@ output_schema:
             anyOf:
               - type: string
                 enum: [text, equation, table]
+              - type: "null"
+          value_format:
+            title: Value Format
+            default: null
+            description: INSERT 새 블록의 콘텐츠 포맷. text/table=markdown|html, equation=tex|html. 미지정 시 타입 기본값.
+            anyOf:
+              - type: string
+                enum: [markdown, html, tex]
               - type: "null"
           source:
             title: Source

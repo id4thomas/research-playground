@@ -13,7 +13,7 @@ import type {
   InteractionAction,
   OutlineEntry,
 } from "../types";
-import { findBlock } from "../types";
+import { findBlock, DEFAULT_FORMAT } from "../types";
 import type { MsgWithIntent } from "../App";
 
 function sectionTitle(doc: DocumentT, code: string | null | undefined): string {
@@ -27,11 +27,12 @@ function blockTargetDesc(ref: string, doc: DocumentT): string {
   return `'${found.section.meta.title}' 섹션 내 블록`;
 }
 
-/** REWRITE 시 wire 에 실을 Block 을 만든다 (원본 타입/ id 보존). */
+/** REWRITE 시 wire 에 실을 Block 을 만든다 (원본 타입/format/id 보존). */
 function rewriteBlock(ref: string, value: string, doc: DocumentT): Block {
   const found = findBlock(doc, ref);
-  const type = found?.section.blocks[ref]?.type ?? "text";
-  return { id: ref, type, content: value };
+  const orig = found?.section.blocks[ref];
+  const type = orig?.type ?? "text";
+  return { id: ref, type, content: value, format: orig?.format ?? DEFAULT_FORMAT[type] };
 }
 
 function editToAction(e: EditEntry, doc: DocumentT): InteractionAction {

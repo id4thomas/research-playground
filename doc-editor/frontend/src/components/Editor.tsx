@@ -1,8 +1,7 @@
 import { useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import type { Block, DocumentT } from "../types";
 import { orderedBlocks } from "../types";
+import { BlockRender } from "./BlockView";
 
 type Props = {
   doc: DocumentT;
@@ -16,37 +15,24 @@ type Props = {
 function BlockBody({ block, onChange }: { block: Block; onChange: (v: string) => void }) {
   const [editing, setEditing] = useState(false);
   const rows = Math.max(1, Math.ceil(block.content.length / 60));
-  const base = "flex-1 resize-none outline-none leading-snug text-sm";
 
-  if (block.type === "text") {
-    if (editing) {
-      return (
-        <textarea
-          autoFocus
-          className={`${base} bg-transparent`}
-          rows={rows}
-          value={block.content}
-          onChange={(e) => onChange(e.target.value)}
-          onBlur={() => setEditing(false)}
-        />
-      );
-    }
+  if (editing) {
+    // 편집 모드: 항상 raw 소스를 textarea 로 (포맷 그대로 수정).
     return (
-      <div
-        className="flex-1 leading-snug text-sm prose-block cursor-text"
-        onClick={() => setEditing(true)}
-      >
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{block.content}</ReactMarkdown>
-      </div>
+      <textarea
+        autoFocus
+        className="flex-1 resize-none outline-none leading-snug bg-slate-50 rounded px-2 py-1 font-mono text-[12px]"
+        rows={rows}
+        value={block.content}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={() => setEditing(false)}
+      />
     );
   }
   return (
-    <textarea
-      className={`${base} bg-slate-50 rounded px-2 py-1 font-mono text-[12px]`}
-      rows={rows}
-      value={block.content}
-      onChange={(e) => onChange(e.target.value)}
-    />
+    <div className="flex-1 min-w-0 cursor-text" onClick={() => setEditing(true)} title={`${block.type}:${block.format}`}>
+      <BlockRender block={block} />
+    </div>
   );
 }
 

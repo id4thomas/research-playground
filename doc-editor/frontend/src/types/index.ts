@@ -1,8 +1,17 @@
 // ---------- Document types (UUID 기반 블록) ----------
 
 export type BlockType = "text" | "equation" | "table";
+// 콘텐츠 표현 포맷. 허용값은 타입마다 다르다: text/table=markdown|html, equation=tex|html.
+export type BlockFormat = "markdown" | "html" | "tex";
 // 블록은 안정적인 UUID(`id`)로 식별된다. 편집/삽입/삭제가 누적돼도 id는 불변.
-export type Block = { id: string; type: BlockType; content: string };
+export type Block = { id: string; type: BlockType; content: string; format: BlockFormat };
+
+/** 블록 타입별 기본 format (서버 _DEFAULT_FORMAT 과 일치). */
+export const DEFAULT_FORMAT: Record<BlockType, BlockFormat> = {
+  text: "markdown",
+  table: "html",
+  equation: "tex",
+};
 
 export type SectionMeta = {
   code: string;   // "S1", "S1-1", "S2-1-1"

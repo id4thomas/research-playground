@@ -10,7 +10,7 @@ def llm_edit_to_api(le: LLMEdit) -> Edit | None:
         return ReplaceEdit(source=le.source, target=le.target, summary=le.summary)
     if le.action == "INSERT" and le.value:
         return InsertEdit(
-            value=make_block(le.value_type or "text", le.value),
+            value=make_block(le.value_type or "text", le.value, format=le.value_format),
             summary=le.summary,
         )
     return None

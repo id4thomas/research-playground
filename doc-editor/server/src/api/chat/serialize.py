@@ -154,8 +154,11 @@ def _edits_to_actions(document: Document, edits_map: dict) -> list[InteractionAc
         _sec, orig, desc = _resolve(document, ref)
         for e in edits:
             if isinstance(e, RewriteEdit):
-                # 같은 블록을 재작성 → 원본 id/타입을 유지.
-                block = make_block(orig.type if orig else "text", e.value, id=ref)
+                # 같은 블록을 재작성 → 원본 id/타입/format 을 유지.
+                block = make_block(
+                    orig.type if orig else "text", e.value, id=ref,
+                    format=orig.format if orig else None,
+                )
                 actions.append(RewriteBlockAction(
                     ref=ref, block=block, summary=e.summary, target_desc=desc))
             elif isinstance(e, ReplaceEdit):

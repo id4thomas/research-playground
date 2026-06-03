@@ -20,6 +20,8 @@ class LLMEdit(BaseModel):
     )
     value: str | None = None
     value_type: Literal["text", "equation", "table"] | None = None
+    # INSERT 새 블록의 콘텐츠 포맷. 미지정 시 타입별 기본값(text=markdown/table=html/equation=tex).
+    value_format: Literal["markdown", "html", "tex"] | None = None
     source: str | None = None
     target: str | None = None
 

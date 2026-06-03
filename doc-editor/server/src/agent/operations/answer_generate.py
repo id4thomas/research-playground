@@ -30,7 +30,11 @@ def _render_sections(document: Document, section_codes: list[str] | None) -> str
             continue
         parts.append(f"\n### {sec.meta.title}")
         for b in sec.ordered_blocks():
-            parts.append(b.content)
+            # 일반 텍스트(markdown)는 그대로, 표/수식 등은 포맷을 알려 오해를 막는다.
+            if b.type == "text" and b.format == "markdown":
+                parts.append(b.content)
+            else:
+                parts.append(f"({b.type}:{b.format})\n{b.content}")
     return "\n".join(parts)
 
 
