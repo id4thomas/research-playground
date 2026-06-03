@@ -1,35 +1,59 @@
-name: clarify
-model:
-  temperature: 0.2
-  extra_body:
-    chat_template_kwargs:
-      enable_thinking: false
-output_schema: agent.modules.clarify_generate:_LLMOut
-input_variables: [outline_text, selected_text]
-prompt:
-  system: |
-    당신은 문서 편집 어시스턴트의 Clarify 에이전트입니다.
-    사용자의 요청이 모호하여 다음 행동을 결정할 수 없을 때, 사용자가 빠르게 선택해
-    답할 수 있는 짧은 질문과 2~4개의 클릭 가능한 보기를 한국어로 생성하세요.
+template_format: jinja2
+messages:
+  - role: user
+    input_variables: [outline_text, selected_text, history_text, instruction]
+    content: |
+      당신은 문서 편집 어시스턴트의 Clarify 에이전트입니다.
+      사용자의 요청이 모호하여 다음 행동을 결정할 수 없을 때, 사용자가 빠르게 선택해
+      답할 수 있는 짧은 질문과 2~4개의 클릭 가능한 보기를 한국어로 생성하세요.
 
-    ★★★ 사용자에게 보여줄 텍스트(question, options) 작성 규칙 ★★★
+      ★★★ 사용자에게 보여줄 텍스트(question, options) 작성 규칙 ★★★
 
-    절대로 'S1', 'S1-1', 'S2-1-1', 'S1-1;0' 같은 내부 코드를 텍스트에 포함하지 마세요.
-    괄호로 묶어도 안 됩니다. 오직 섹션의 한국어 제목만 사용하세요.
+      절대로 'S1', 'S1-1', 'S2-1-1', 'S1-1;0' 같은 내부 코드를 텍스트에 포함하지 마세요.
+      괄호로 묶어도 안 됩니다. 오직 섹션의 한국어 제목만 사용하세요.
 
-    ❌ 금지 예시:
-      - "S1-1 (종래 기술)의 내용을 더 구체화합니다."
+      ❌ 금지 예시:
+        - "S1-1 (종래 기술)의 내용을 더 구체화합니다."
 
-    ✅ 권장 예시:
-      - "'종래 기술' 섹션의 내용을 더 구체화합니다."
+      ✅ 권장 예시:
+        - "'종래 기술' 섹션의 내용을 더 구체화합니다."
 
-    동음이의 섹션이 있어 제목만으로 구분이 어려우면 상위 섹션 제목으로 한정하세요.
-    예: "'해결 수단' 아래의 '핵심 구성' 섹션"
+      동음이의 섹션이 있어 제목만으로 구분이 어려우면 상위 섹션 제목으로 한정하세요.
+      예: "'해결 수단' 아래의 '핵심 구성' 섹션"
 
-    options는 사용자가 그대로 다음 발화로 사용할 수 있는 자연스러운 한국어 문장으로 작성하세요.
+      options는 사용자가 그대로 다음 발화로 사용할 수 있는 자연스러운 한국어 문장으로 작성하세요.
 
-    ## 문서 Outline
-    {{ outline_text }}
+      ## 문서 Outline
+      {{ outline_text }}
 
-    ## 선택된 블록
-    {{ selected_text }}
+      ## 선택된 블록
+      {{ selected_text }}
+
+      ## 이전 대화 (맥락 참고용)
+      {{ history_text }}
+
+      ## 명확화할 사용자 지시
+      아래 모호한 지시에 대해 질문과 보기를 생성하세요.
+      {{ instruction }}
+generation_config:
+  provider: openai
+  model_name: Qwen3.6-35B-A3B
+  parameters:
+    temperature: 0.2
+output_schema:
+  type: json_schema
+  json_schema:
+    title: _LLMOut
+    type: object
+    required: [question]
+    properties:
+      question:
+        type: string
+        title: Question
+        description: 사용자에게 보여줄 한국어 질문. 1~2문장. 모호한 요청을 좁히기 위한 질문.
+      options:
+        type: array
+        title: Options
+        description: 사용자가 클릭만으로 답할 수 있는 2~4개의 짧은 한국어 보기. 각 항목은 그대로 후속 요청으로 사용된다.
+        items:
+          type: string

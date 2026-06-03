@@ -1,12 +1,10 @@
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
-
-from agent.base import BaseAgent
-from agent.graphs.doc_answerer.graph import DocAnswererAgent
+from agent.graphs.doc_answerer.graph import AnswererState, DocAnswererAgent
 from agent.graphs.doc_assistant.graph import DocAssistantAgent
-from agent.graphs.doc_clarifier.graph import DocClarifierAgent
-from agent.graphs.doc_editor.graph import DocEditorAgent
-from agent.graphs.doc_restructurer.graph import DocRestructurerAgent
-from agent.modules.strip_codes import strip_section_codes
+from agent.graphs.doc_assistant.states import AgentState
+from agent.graphs.doc_clarifier.graph import ClarifierState, DocClarifierAgent
+from agent.graphs.doc_editor.graph import DocEditorAgent, EditorState
+from agent.graphs.doc_restructurer.graph import DocRestructurerAgent, RestructurerState
+from agent.operations import StripCodesOperation
 from api.chat.dto import ChatMessage, ChatRequest, ChatResponse
 from core.exceptions import GraphExecutionError
 from core.langchain.usage import TokenUsage
@@ -40,7 +38,7 @@ def aggregate_usage(state: dict) -> TokenUsage:
 
 
 # ---------------------------------------------------------------------------
-# History serialization — ChatMessage(rich) → LangChain BaseMessage(텍스트)
+# History serialization — ChatMessage(rich) → {"role", "content"} 딕셔너리(텍스트)
 # ---------------------------------------------------------------------------
 _INTENT_LABEL = {
     "edit": "편집 제안",
@@ -114,26 +112,18 @@ def _format_user_content(m: ChatMessage, prev: ChatMessage | None) -> str:
     return f"[USER] {m.content}"
 
 
-def to_lc_messages(messages: list[ChatMessage]) -> list[BaseMessage]:
-    out: list[BaseMessage] = []
+def to_messages(messages: list[ChatMessage]) -> list[dict]:
+    out: list[dict] = []
     prev: ChatMessage | None = None
     for m in messages:
         if m.role == "user":
-            out.append(HumanMessage(content=_format_user_content(m, prev)))
+            out.append({"role": "user", "content": _format_user_content(m, prev)})
         elif m.role == "assistant":
-            out.append(AIMessage(content=_format_assistant_content(m)))
+            out.append({"role": "assistant", "content": _format_assistant_content(m)})
         else:
-            out.append(AIMessage(content=m.content))
+            out.append({"role": m.role, "content": m.content})
         prev = m
     return out
-
-
-def initial_state(req: ChatRequest) -> dict:
-    return {
-        "messages": to_lc_messages(req.messages),
-        "document": req.document,
-        "selected": req.selected,
-    }
 
 
 # ---------------------------------------------------------------------------
@@ -143,7 +133,12 @@ async def run_chat(req: ChatRequest) -> ChatResponse:
     try:
         with start_span("chat_request") as span:
             span.set_inputs({"project_id": req.project_id, "selected": req.selected})
-            result = await _assistant.invoke(initial_state(req))
+            state = AgentState(
+                messages=to_messages(req.messages),
+                document=req.document,
+                selected=req.selected,
+            )
+            result = await _assistant.invoke(state)
             orch = result.get("intent_router")
             final = result.get("final")
             resp_intent = orch.intent if orch else ""
@@ -159,7 +154,7 @@ async def run_chat(req: ChatRequest) -> ChatResponse:
 
     reason = orch.suggest_new_session_reason if orch else None
     if reason:
-        reason = strip_section_codes(reason, req.document)
+        reason = await StripCodesOperation.run(reason, req.document)
 
     return ChatResponse(
         message=ChatMessage(role="assistant", content=final.message if final else ""),
@@ -176,12 +171,7 @@ async def run_chat(req: ChatRequest) -> ChatResponse:
 # ---------------------------------------------------------------------------
 # Direct subgraph runs (/api/chat/{intent})
 # ---------------------------------------------------------------------------
-async def _run_subgraph(agent: BaseAgent, req: ChatRequest, intent: str) -> ChatResponse:
-    try:
-        result = await agent.invoke(initial_state(req))
-    except Exception as e:
-        logger.exception("%s subgraph execution failed", intent)
-        raise GraphExecutionError(str(e), graph=intent) from e
+def _subgraph_response(result: dict, intent: str) -> ChatResponse:
     final = result.get("final")
     return ChatResponse(
         message=ChatMessage(role="assistant", content=final.message if final else ""),
@@ -194,16 +184,56 @@ async def _run_subgraph(agent: BaseAgent, req: ChatRequest, intent: str) -> Chat
 
 
 async def run_edit(req: ChatRequest) -> ChatResponse:
-    return await _run_subgraph(_editor, req, "edit")
+    state = EditorState(
+        messages=to_messages(req.messages),
+        document=req.document,
+        selected=req.selected,
+    )
+    try:
+        result = await _editor.invoke(state)
+    except Exception as e:
+        logger.exception("edit subgraph execution failed")
+        raise GraphExecutionError(str(e), graph="edit") from e
+    return _subgraph_response(result, "edit")
 
 
 async def run_restructure(req: ChatRequest) -> ChatResponse:
-    return await _run_subgraph(_restructurer, req, "restructure")
+    state = RestructurerState(
+        messages=to_messages(req.messages),
+        document=req.document,
+        selected=req.selected,
+    )
+    try:
+        result = await _restructurer.invoke(state)
+    except Exception as e:
+        logger.exception("restructure subgraph execution failed")
+        raise GraphExecutionError(str(e), graph="restructure") from e
+    return _subgraph_response(result, "restructure")
 
 
 async def run_answer(req: ChatRequest) -> ChatResponse:
-    return await _run_subgraph(_answerer, req, "answer")
+    state = AnswererState(
+        messages=to_messages(req.messages),
+        document=req.document,
+        selected=req.selected,
+    )
+    try:
+        result = await _answerer.invoke(state)
+    except Exception as e:
+        logger.exception("answer subgraph execution failed")
+        raise GraphExecutionError(str(e), graph="answer") from e
+    return _subgraph_response(result, "answer")
 
 
 async def run_clarify(req: ChatRequest) -> ChatResponse:
-    return await _run_subgraph(_clarifier, req, "clarify")
+    state = ClarifierState(
+        messages=to_messages(req.messages),
+        document=req.document,
+        selected=req.selected,
+    )
+    try:
+        result = await _clarifier.invoke(state)
+    except Exception as e:
+        logger.exception("clarify subgraph execution failed")
+        raise GraphExecutionError(str(e), graph="clarify") from e
+    return _subgraph_response(result, "clarify")

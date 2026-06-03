@@ -1,30 +1,65 @@
-name: context_collect
-model:
-  temperature: 0
-  extra_body:
-    chat_template_kwargs:
-      enable_thinking: false
-output_schema: agent.modules.context_collect:_LLMOut
-input_variables: [outline_text, selected_text, hint_text]
-prompt:
-  system: |
-    당신은 문서 편집 어시스턴트의 컨텍스트 수집기입니다.
-    사용자 요청과 문서 outline을 보고, 후속 액션 노드가 실제 블록 내용을 봐야 할
-    섹션 코드 목록을 선정하세요.
+template_format: jinja2
+messages:
+  - role: user
+    input_variables: [outline_text, selected_text, hint_text, history_text, instruction]
+    content: |
+      당신은 문서 편집 어시스턴트의 컨텍스트 수집기입니다.
+      사용자 요청과 문서 outline을 보고, 후속 액션 노드가 실제 블록 내용을 봐야 할
+      섹션 코드 목록을 선정하세요.
+      섹션 코드는 섹션 단위입니다. 어떤 섹션을 포함하면 그 섹션의 모든 블록이 로드됩니다.
 
-    규칙:
-    - outline에 존재하는 코드만 사용 (S1, S1-2, S2-1-1 등).
-    - 너무 많이 포함하면 비용이 커집니다. 정말 필요한 섹션만.
-    - 선택된 블록(selected)이 있으면 그 블록의 섹션은 반드시 포함.
-    - 직접 언급된 섹션 + 의미상 함께 봐야 하는 인접/참조 섹션 정도가 적절.
-    - 요청이 outline 전체에 대한 답변/구조 검토라면 모든 코드 반환 가능.
-    - 본문이 필요 없는 단순 질문이라면 빈 배열도 허용.
+      판단 순서:
+      1) 먼저 reasoning에 어떤 섹션이 왜 필요한지 적는다.
+      2) 그 결론에 맞는 섹션 코드를 section_codes에 빠짐없이 담는다.
+         (reasoning에서 "포함해야 한다"고 한 섹션은 반드시 section_codes에 있어야 한다.)
 
-    ## 문서 Outline
-    {{ outline_text }}
+      규칙:
+      - outline에 존재하는 코드만 사용 (S1, S1-2, S2-1-1 등).
+      - 요청이 수정/참조하는 섹션은 반드시 포함한다. 그 섹션의 일부 문장만 바꾸는
+        경우라도 섹션 전체를 봐야 하므로 해당 섹션 코드를 포함한다.
+      - 선택된 블록(selected)이 있으면 그 블록의 섹션은 반드시 포함.
+      - 직접 언급된 섹션 + 의미상 함께 봐야 하는 인접/참조 섹션 정도가 적절.
+      - 너무 많이 포함하면 비용이 커지니, 위 대상 외의 무관한 섹션은 넣지 않는다.
+      - 요청이 outline 전체에 대한 답변/구조 검토라면 모든 코드 반환 가능.
+      - 빈 배열은 본문을 전혀 볼 필요 없는 메타 질문일 때만 허용한다.
+        조금이라도 본문을 수정/참조한다면 빈 배열을 반환하지 않는다.
 
-    ## 선택된 블록
-    {{ selected_text }}
+      ## 문서 Outline
+      {{ outline_text }}
 
-    ## 인텐트 라우터의 후보 섹션 (참고)
-    {{ hint_text }}
+      ## 선택된 블록
+      {{ selected_text }}
+
+      ## 인텐트 라우터의 후보 섹션 (참고)
+      {{ hint_text }}
+
+      ## 이전 대화 (맥락 참고용)
+      {{ history_text }}
+
+      ## 사용자 지시
+      아래 지시를 처리하는 데 필요한 섹션을 선정하세요.
+      {{ instruction }}
+generation_config:
+  provider: openai
+  model_name: Qwen3.6-35B-A3B
+  parameters:
+    temperature: 0
+output_schema:
+  type: json_schema
+  json_schema:
+    title: _LLMOut
+    type: object
+    properties:
+      reasoning:
+        title: Reasoning
+        default: null
+        description: 어떤 섹션이 왜 필요한지 먼저 추론한다. section_codes는 이 결론과 일치해야 한다.
+        anyOf:
+          - type: string
+          - type: "null"
+      section_codes:
+        type: array
+        title: Section Codes
+        description: 이번 요청을 처리하기 위해 본문을 봐야 하는 섹션 코드 목록. outline에 존재하는 코드만 사용. reasoning에서 필요하다고 판단한 섹션을 빠짐없이 포함.
+        items:
+          type: string

@@ -1,20 +1,30 @@
-name: answer
-model:
-  temperature: 0.3
-  extra_body:
-    chat_template_kwargs:
-      enable_thinking: false
-input_variables: [outline_text, body_text]
-prompt:
-  system: |
-    당신은 문서 편집 어시스턴트입니다. 사용자의 질문에 1~5문장으로 한국어로 답하세요.
-    - 문서 내용 기반 질문이면 outline과 대화 맥락을 활용.
-    - 'S1', 'S1-2;0' 같은 내부 코드를 노출하지 말고 섹션의 실제 한국어 제목으로 지칭.
+template_format: jinja2
+messages:
+  - role: user
+    input_variables: [outline_text, body_text, history_text, instruction]
+    content: |
+      당신은 문서 편집 어시스턴트입니다. 사용자의 질문에 1~5문장으로 한국어로 답하세요.
+      - 문서 내용 기반 질문이면 outline과 대화 맥락을 활용.
+      - 'S1', 'S1-2;0' 같은 내부 코드를 노출하지 말고 섹션의 실제 한국어 제목으로 지칭.
 
-    ## 문서 Outline
-    {{ outline_text }}
-    {% if body_text %}
+      ## 문서 Outline
+      {{ outline_text }}
+      {% if body_text %}
 
-    ## 참고 본문
-    {{ body_text }}
-    {% endif %}
+      ## 참고 본문
+      {{ body_text }}
+      {% endif %}
+
+      ## 이전 대화 (맥락 참고용)
+      {{ history_text }}
+
+      ## 사용자 질문
+      아래 질문에 답하세요.
+      {{ instruction }}
+generation_config:
+  provider: openai
+  model_name: Qwen3.6-35B-A3B
+  parameters:
+    temperature: 0.3
+output_schema:
+  type: text

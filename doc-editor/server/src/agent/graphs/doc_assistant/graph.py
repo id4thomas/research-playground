@@ -7,10 +7,9 @@ START → intent_router → (route) → one of:
   - clarify_agent      (doc_clarifier subgraph)
 → END
 
-각 서브그래프는 자체적으로 `final` (FinalOutput)을 부모 상태에 쓴다. doc_assistant는
-오직 intent 분류 + 라우팅만 담당한다. intent_router는 더 이상 clarify 문구를
-생성하지 않으며, clarify 분기일 때는 doc_clarifier 서브그래프가 LLM 호출로
-질문/보기를 별도로 만든다.
+각 서브그래프는 독립된 state 스키마를 가지며, wrapper 노드 안에서 명시적으로 입력을
+매핑해 invoke하고 결과(`final` 등)를 부모 상태로 되돌린다(call-a-subgraph-inside-a-node).
+doc_assistant는 오직 intent 분류 + 라우팅만 담당한다.
 """
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.state import CompiledStateGraph
@@ -47,12 +46,63 @@ class DocAssistantAgent(BaseAgent):
         if self._graph is not None:
             return self._graph
 
+        editor = build_editor_graph()
+        restructurer = build_restructurer_graph()
+        answerer = build_answerer_graph()
+        clarifier = build_clarifier_graph()
+
+        def _hint_sections(state: AgentState) -> list[str] | None:
+            orch = state.get("intent_router")
+            return orch.target_sections if orch else None
+
+        async def edit_agent(state: AgentState) -> dict:
+            result = await editor.ainvoke(
+                {
+                    "messages": state["messages"],
+                    "document": state["document"],
+                    "selected": state.get("selected"),
+                    "hint_sections": _hint_sections(state),
+                }
+            )
+            return {k: result[k] for k in ("context", "edit", "final") if k in result}
+
+        async def restructure_agent(state: AgentState) -> dict:
+            result = await restructurer.ainvoke(
+                {
+                    "messages": state["messages"],
+                    "document": state["document"],
+                    "selected": state.get("selected"),
+                }
+            )
+            return {k: result[k] for k in ("restructure", "final") if k in result}
+
+        async def answer_agent(state: AgentState) -> dict:
+            result = await answerer.ainvoke(
+                {
+                    "messages": state["messages"],
+                    "document": state["document"],
+                    "selected": state.get("selected"),
+                    "hint_sections": _hint_sections(state),
+                }
+            )
+            return {k: result[k] for k in ("context", "answer", "final") if k in result}
+
+        async def clarify_agent(state: AgentState) -> dict:
+            result = await clarifier.ainvoke(
+                {
+                    "messages": state["messages"],
+                    "document": state["document"],
+                    "selected": state.get("selected"),
+                }
+            )
+            return {k: result[k] for k in ("clarify", "final") if k in result}
+
         b = StateGraph(AgentState)
         b.add_node("intent_router", intent_router_node)
-        b.add_node("edit_agent", build_editor_graph())
-        b.add_node("restructure_agent", build_restructurer_graph())
-        b.add_node("answer_agent", build_answerer_graph())
-        b.add_node("clarify_agent", build_clarifier_graph())
+        b.add_node("edit_agent", edit_agent)
+        b.add_node("restructure_agent", restructure_agent)
+        b.add_node("answer_agent", answer_agent)
+        b.add_node("clarify_agent", clarify_agent)
 
         b.add_edge(START, "intent_router")
         b.add_conditional_edges(

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from langchain_core.messages import AIMessage
 from pydantic import BaseModel
 
 
@@ -15,6 +16,7 @@ class TokenUsage(BaseModel):
     """
     input: int = 0
     output: int = 0
+    total: int = 0
     reasoning: int = 0
 
     def add(self, other: "TokenUsage | None") -> "TokenUsage":
@@ -23,37 +25,58 @@ class TokenUsage(BaseModel):
         return TokenUsage(
             input=self.input + other.input,
             output=self.output + other.output,
+            total=self.total + other.total,
             reasoning=self.reasoning + other.reasoning,
         )
 
     @classmethod
-    def from_message(cls, msg: Any) -> "TokenUsage":
-        """LangChain AIMessage(또는 with_structured_output include_raw dict)에서 추출."""
-        if msg is None:
-            return cls()
-        # include_raw=True 응답은 {"raw": AIMessage, "parsed": ..., "parsing_error": ...}
-        if isinstance(msg, dict) and "raw" in msg:
-            msg = msg.get("raw")
+    def from_message(cls, msg: AIMessage) -> "TokenUsage":
+        """LangChain AIMessage에서 추출.
+        usage_metadata example
+        {
+            'input_tokens': 27,
+            'output_tokens': 25,
+            'total_tokens': 52,
+            'input_token_details': {},
+            'output_token_details': {}
+        }
+        """
         if msg is None:
             return cls()
         um = getattr(msg, "usage_metadata", None)
         if um:
+            input_tokens = int(um.get("input_tokens", 0) or 0)
+            output_tokens = int(um.get("output_tokens", 0) or 0)
+            total_tokens = int(um.get("total_tokens", 0) or 0)
+            
             details = um.get("output_token_details") or {}
-            out = int(um.get("output_tokens", 0) or 0)
-            reasoning = int(details.get("reasoning", 0) or 0)
-            pure_out = max(0, out - reasoning)
+            reasoning_tokens = int(details.get("reasoning", 0) or 0)
+
             return cls(
-                input=int(um.get("input_tokens", 0) or 0),
-                output=pure_out,
-                reasoning=reasoning,
+                input=input_tokens,
+                output=output_tokens,
+                total=total_tokens,
+                reasoning=reasoning_tokens
             )
-        rm = getattr(msg, "response_metadata", None) or {}
-        tu = rm.get("token_usage") or {}
-        if tu:
-            details = tu.get("completion_tokens_details") or {}
-            return cls(
-                input=int(tu.get("prompt_tokens", 0) or 0),
-                output=int(tu.get("completion_tokens", 0) or 0),
-                reasoning=int(details.get("reasoning_tokens", 0) or 0),
-            )
-        return cls()
+        else:
+            return cls()
+        
+        # msg.usage
+        
+        # # include_raw=True 응답은 {"raw": AIMessage, "parsed": ..., "parsing_error": ...}
+        # if isinstance(msg, dict) and "raw" in msg:
+        #     msg = msg.get("raw")
+        # if msg is None:
+        #     return cls()
+        #     )
+        # rm = getattr(msg, "response_metadata", None) or {}
+        # tu = rm.get("token_usage") or {}
+        # if tu:
+        #     details = tu.get("completion_tokens_details") or {}
+        #     return cls(
+        #         input=int(tu.get("prompt_tokens", 0) or 0),
+        #         output=int(tu.get("completion_tokens", 0) or 0),
+        #         total=int(tu.get("completion_tokens", 0) or 0),
+        #         reasoning=int(details.get("reasoning_tokens", 0) or 0),
+        #     )
+        # return cls()

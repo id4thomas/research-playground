@@ -1,16 +1,19 @@
 """Answer assemble node — converts answer output into FinalOutput."""
+from langchain_core.runnables import RunnableConfig
+
+from agent.base import BaseNode
+from agent.graphs.doc_answerer.states import AnswererState
 from agent.graphs.doc_assistant.states import FinalOutput
-from agent.modules.strip_codes import strip_section_codes
-from agent.nodes.base import BaseNode
+from agent.operations import StripCodesOperation
 
 
 class AnswerAssembleNode(BaseNode):
     name = "answer_assemble"
 
-    async def run(self, state: dict) -> dict:
+    async def run(self, state: AnswererState, config: RunnableConfig) -> dict:
         out = state.get("answer")
         doc = state["document"]
-        message = strip_section_codes((out.message if out else "") or "", doc)
+        message = await StripCodesOperation.run((out.message if out else "") or "", doc)
         return {"final": FinalOutput(message=message)}
 
 

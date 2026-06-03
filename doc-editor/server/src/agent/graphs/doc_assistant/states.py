@@ -1,17 +1,19 @@
-"""Agent state for the doc-editor graph."""
+"""Shared agent state for the doc-editor graphs."""
 from typing import Annotated
 
-from typing_extensions import TypedDict
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 from pydantic import BaseModel, Field
+from typing_extensions import TypedDict
 
-from agent.modules.answer_generate import AnswerGenerateOutput as AnswerOutput
-from agent.modules.clarify_generate import ClarifyGenerateOutput as ClarifyOutput
-from agent.modules.context_collect import ContextCollectOutput
-from agent.modules.edit_generate import EditGenerateOutput as EditOutput
-from agent.modules.intent_classify import IntentClassifyOutput as IntentRouterOutput
-from agent.modules.restructure_generate import RestructureGenerateOutput as RestructureOutput
+from agent.operations import (
+    AnswerGenerateOutput,
+    ClarifyGenerateOutput,
+    ContextCollectOutput,
+    EditGenerateOutput,
+    IntentClassifyOutput,
+    RestructureGenerateOutput,
+)
 from core.data import Document, Edit, OutlineAction
 
 
@@ -27,10 +29,10 @@ class AgentState(TypedDict, total=False):
     document: Document
     selected: list[str] | None
 
-    intent_router: IntentRouterOutput
+    intent_router: IntentClassifyOutput
     context: ContextCollectOutput
-    edit: EditOutput
-    restructure: RestructureOutput
-    answer: AnswerOutput
-    clarify: ClarifyOutput
+    edit: EditGenerateOutput
+    restructure: RestructureGenerateOutput
+    answer: AnswerGenerateOutput
+    clarify: ClarifyGenerateOutput
     final: FinalOutput
