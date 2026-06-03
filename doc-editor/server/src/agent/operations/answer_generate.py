@@ -29,7 +29,7 @@ def _render_sections(document: Document, section_codes: list[str] | None) -> str
         if not sec:
             continue
         parts.append(f"\n### {sec.meta.title}")
-        for b in sec.blocks:
+        for b in sec.ordered_blocks():
             parts.append(b.content)
     return "\n".join(parts)
 

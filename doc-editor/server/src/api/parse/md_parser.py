@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from typing import Optional
 
-from core.data import Block, Document, Section, SectionMeta
+from core.data import Block, Document, Section, SectionMeta, make_block
 
 
 def _assign_section_codes(headers: list[tuple[int, str]]) -> list[tuple[str, int, str]]:
@@ -36,7 +36,7 @@ def _split_into_blocks(text: str) -> list[Block]:
     def flush_text():
         content = "\n".join(current_lines).strip()
         if content:
-            blocks.append(Block(type="text", content=content))
+            blocks.append(make_block("text", content))
         current_lines.clear()
 
     lines = text.splitlines()
@@ -53,7 +53,7 @@ def _split_into_blocks(text: str) -> list[Block]:
                 i += 1
             if i < len(lines):
                 eq_lines.append(lines[i])
-            blocks.append(Block(type="equation", content="\n".join(eq_lines)))
+            blocks.append(make_block("equation", "\n".join(eq_lines)))
         # Detect HTML table
         elif line.strip().startswith("<table"):
             flush_text()
@@ -64,7 +64,7 @@ def _split_into_blocks(text: str) -> list[Block]:
                 i += 1
             if i < len(lines):
                 table_lines.append(lines[i])
-            blocks.append(Block(type="table", content="\n".join(table_lines)))
+            blocks.append(make_block("table", "\n".join(table_lines)))
         elif line.strip() == "":
             flush_text()
         else:
@@ -75,6 +75,15 @@ def _split_into_blocks(text: str) -> list[Block]:
     return blocks
 
 
+def _make_section(meta: SectionMeta, blocks: list[Block]) -> Section:
+    """블록 리스트를 (blocks dict, order) 형태의 Section으로 조립."""
+    return Section(
+        meta=meta,
+        blocks={b.id: b for b in blocks},
+        order=[b.id for b in blocks],
+    )
+
+
 def parse_markdown(md_text: str) -> Document:
     """Parse a Markdown string into a Document with auto-assigned section codes."""
     # Split into (header_line, body) pairs
@@ -83,12 +92,10 @@ def parse_markdown(md_text: str) -> Document:
 
     if not matches:
         # No headers — treat entire doc as single section S1
+        meta = SectionMeta(code="S1", title="Document", level=1)
         return Document(
-            sections={"S1": Section(
-                meta=SectionMeta(code="S1", title="Document", level=1),
-                blocks=_split_into_blocks(md_text),
-            )},
-            outline=[SectionMeta(code="S1", title="Document", level=1)],
+            sections={"S1": _make_section(meta, _split_into_blocks(md_text))},
+            outline=[meta],
         )
 
     headers = [(len(m.group(1)), m.group(2).strip()) for m in matches]
@@ -103,7 +110,7 @@ def parse_markdown(md_text: str) -> Document:
         body = md_text[start:end]
         blocks = _split_into_blocks(body)
         meta = SectionMeta(code=code, title=title, level=level)
-        sections[code] = Section(meta=meta, blocks=blocks)
+        sections[code] = _make_section(meta, blocks)
         outline_flat.append(meta)
 
     # Populate children

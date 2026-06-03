@@ -12,7 +12,7 @@ from .document import Block
 
 class LLMEdit(BaseModel):
     """LLM이 직접 뱉는 평탄한 edit 모델 (서버에서 Edit으로 좁힌다)."""
-    ref: str = Field(description='블록 식별자. 예: "S1;0", "S1-2;3".')
+    ref: str = Field(description="수정 대상 블록의 UUID (문서 블록에 표기된 id).")
     action: Literal["REWRITE", "REPLACE", "INSERT"]
     summary: str = Field(
         default="",

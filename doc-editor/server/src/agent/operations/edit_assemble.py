@@ -1,6 +1,6 @@
 """Convert LLM edit payloads to the API Edit shape."""
 from agent.base import BaseOperation
-from core.data import Block, Edit, InsertEdit, LLMEdit, ReplaceEdit, RewriteEdit
+from core.data import Edit, InsertEdit, LLMEdit, ReplaceEdit, RewriteEdit, make_block
 
 
 def llm_edit_to_api(le: LLMEdit) -> Edit | None:
@@ -10,7 +10,7 @@ def llm_edit_to_api(le: LLMEdit) -> Edit | None:
         return ReplaceEdit(source=le.source, target=le.target, summary=le.summary)
     if le.action == "INSERT" and le.value:
         return InsertEdit(
-            value=Block(type=le.value_type or "text", content=le.value),
+            value=make_block(le.value_type or "text", le.value),
             summary=le.summary,
         )
     return None

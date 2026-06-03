@@ -1,113 +1,84 @@
-import type { Block, DocumentT, Edit } from "../types";
-import { parseRef } from "../types";
+import type { Block, DocumentT, Edit, Section } from "../types";
+import { findBlock, genId } from "../types";
 
 /**
  * 텍스트 콘텐츠를 화면상 별도 블록 단위로 분할한다.
  * - text: 개행(\n)으로 나뉜 각 라인을 별도 블록으로. 빈 줄은 제외.
  * - equation/table: 분할하지 않고 단일 블록 유지.
+ *
+ * 첫 블록은 `keepId`(있으면)를 재사용하고, 나머지는 새 UUID를 부여한다.
  */
-function splitTextValue(value: Block): Block[] {
-  if (value.type !== "text") return [value];
+function splitTextValue(value: Block, keepId?: string): Block[] {
+  const withId = (b: Omit<Block, "id">, first: boolean): Block => ({
+    ...b,
+    id: first && keepId ? keepId : genId(),
+  });
+  if (value.type !== "text") return [withId(value, true)];
   const parts = value.content
     .split(/\n+/)
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
-  if (parts.length <= 1) return [value];
-  return parts.map((content) => ({ type: "text", content }));
+  if (parts.length <= 1) return [withId(value, true)];
+  return parts.map((content, i) => withId({ type: "text", content }, i === 0));
+}
+
+/** order 의 `at` 위치에 블록들을 끼워넣은 새 (blocks, order) 를 만든다. */
+function spliceBlocks(section: Section, at: number, remove: number, insert: Block[]): Section {
+  const order = [...section.order];
+  const removedIds = order.splice(at, remove, ...insert.map((b) => b.id));
+  const blocks: Record<string, Block> = { ...section.blocks };
+  for (const id of removedIds) delete blocks[id];
+  for (const b of insert) blocks[b.id] = b;
+  return { ...section, blocks, order };
 }
 
 /**
- * 섹션별 원본 인덱스 → 현재 인덱스 매핑.
- * 펜딩 edits가 도착했을 때의 블록 인덱스를 기준으로 ref가 만들어지므로,
- * 여러 edit을 순차적으로 accept할 때 이전 edit으로 밀린 위치를 보정한다.
+ * edit 을 문서에 적용한 새 Document 를 반환한다. ref 는 대상 블록 UUID.
+ * UUID 가 안정적이라 순서 보정(anchors)이 필요 없다 — 여러 edit 을 순차 accept 해도
+ * 각자 자신의 블록 id 로 정확히 찾아간다.
  */
-export type Anchors = Record<string, number[]>;
+export function applyEdit(doc: DocumentT, ref: string, edit: Edit): DocumentT {
+  const found = findBlock(doc, ref);
 
-export function initAnchors(doc: DocumentT): Anchors {
-  const out: Anchors = {};
-  for (const [code, section] of Object.entries(doc.sections)) {
-    out[code] = section.blocks.map((_, i) => i);
+  // 대상 블록이 없으면(빈 섹션/이미 사라짐) REWRITE·INSERT 는 신규 블록 추가로 처리.
+  if (!found) {
+    if (edit.action === "REPLACE") return doc;
+    const code = doc.outline[0]?.code;
+    const section = code ? doc.sections[code] : undefined;
+    if (!section || !code) return doc;
+    const parts =
+      edit.action === "REWRITE"
+        ? splitTextValue({ id: ref, type: "text", content: edit.value })
+        : splitTextValue(edit.value);
+    const next = spliceBlocks(section, section.order.length, 0, parts);
+    return { ...doc, sections: { ...doc.sections, [code]: next } };
   }
-  return out;
-}
 
-/**
- * edit을 적용하고, 영향받은 섹션의 anchor를 갱신한 새 anchors를 반환.
- * delta는 동일 섹션 내 origIdx > 적용 위치에 해당하는 anchor에만 더해진다.
- */
-export function applyEditWithAnchors(
-  doc: DocumentT,
-  ref: string,
-  edit: Edit,
-  anchors: Anchors
-): { doc: DocumentT; anchors: Anchors } {
-  const parsed = parseRef(ref);
-  if (!parsed) return { doc, anchors };
-  const { sectionCode, idx: origIdx } = parsed;
-  const section = doc.sections[sectionCode];
-  if (!section) return { doc, anchors };
-
-  const sectionAnchors = anchors[sectionCode] ?? section.blocks.map((_, i) => i);
-  const curIdx = sectionAnchors[origIdx];
-
-  const blocks = [...section.blocks];
-  let delta = 0;
-  // 빈 섹션(또는 잘못된 ref)에서 REWRITE/INSERT 들어오면 신규 블록 추가로 처리.
-  const targetMissing = curIdx === undefined || blocks[curIdx] === undefined;
+  const { code, section, index } = found;
+  const target = section.blocks[ref];
+  let next: Section;
 
   switch (edit.action) {
     case "REPLACE": {
-      if (targetMissing) return { doc, anchors };
-      const target = blocks[curIdx as number];
-      if (target.type !== "text") return { doc, anchors };
-      blocks[curIdx as number] = { ...target, content: target.content.split(edit.source).join(edit.target) };
+      if (target.type !== "text") return doc;
+      const replaced: Block = { ...target, content: target.content.split(edit.source).join(edit.target) };
+      next = { ...section, blocks: { ...section.blocks, [ref]: replaced } };
       break;
     }
     case "REWRITE": {
-      if (targetMissing) {
-        // 섹션에 블록이 없거나 ref가 유효치 않음 → 새 블록 삽입
-        const parts = splitTextValue({ type: "text", content: edit.value });
-        blocks.push(...parts);
-        delta = parts.length;
-      } else {
-        const target = blocks[curIdx as number];
-        const parts = splitTextValue({ ...target, content: edit.value });
-        blocks.splice(curIdx as number, 1, ...parts);
-        delta = parts.length - 1;
-      }
+      // 첫 블록은 ref id 유지, 분할되면 나머지는 새 id 로 뒤에 삽입.
+      const parts = splitTextValue({ ...target, content: edit.value }, ref);
+      next = spliceBlocks(section, index, 1, parts);
       break;
     }
     case "INSERT": {
       const parts = splitTextValue(edit.value);
-      if (targetMissing) {
-        blocks.push(...parts);
-      } else {
-        blocks.splice((curIdx as number) + 1, 0, ...parts);
-      }
-      delta = parts.length;
+      next = spliceBlocks(section, index + 1, 0, parts);
       break;
     }
   }
 
-  const nextSectionAnchors = sectionAnchors.map((cur, oi) =>
-    oi > origIdx ? cur + delta : cur
-  );
-
-  return {
-    doc: {
-      ...doc,
-      sections: {
-        ...doc.sections,
-        [sectionCode]: { ...section, blocks },
-      },
-    },
-    anchors: { ...anchors, [sectionCode]: nextSectionAnchors },
-  };
-}
-
-/** Backwards-compatible single-edit apply (no anchor tracking). */
-export function applyEdit(doc: DocumentT, ref: string, edit: Edit): DocumentT {
-  return applyEditWithAnchors(doc, ref, edit, initAnchors(doc)).doc;
+  return { ...doc, sections: { ...doc.sections, [code]: next } };
 }
 
 export function previewBlock(
@@ -115,12 +86,8 @@ export function previewBlock(
   ref: string,
   edit: Edit
 ): { before: string; after: string; kind: "text" | "equation" | "table" | "new" } {
-  const parsed = parseRef(ref);
-  if (!parsed) return { before: "", after: "", kind: "text" };
-  const { sectionCode, idx } = parsed;
-  const section = doc.sections[sectionCode];
-  const blocks: Block[] = section?.blocks ?? [];
-  const target = blocks[idx];
+  const found = findBlock(doc, ref);
+  const target = found ? found.section.blocks[ref] : undefined;
 
   if (edit.action === "INSERT") {
     return { before: "", after: edit.value.content, kind: edit.value.type === "text" ? "new" : edit.value.type };

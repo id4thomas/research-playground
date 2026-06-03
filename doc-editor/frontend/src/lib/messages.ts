@@ -1,21 +1,19 @@
 /**
- * 백엔드(API)로 보낼 messages 페이로드를 생성한다.
+ * 백엔드(API)로 보낼 messages 페이로드(wire ChatMessage)를 생성한다.
  *
- * 이전엔 모든 메타데이터(어시스턴트 인텐트, 제안 목록, 사용자 결정)를 텍스트로
- * 본문에 펴 발랐지만, 이제는 ChatMessage 의 정식 필드(intent, clarify_options,
- * edit_proposals, outline_proposals, picked_option_index)로 그대로 넘겨 서버가
- * LLM용 포맷팅을 담당한다.
+ * 어시스턴트 턴의 제안/사용자 결정은 구조화된 `actions[]`(블록 UUID 참조)로 그대로
+ * 실어 보내고, 서버가 LLM용 직렬화를 담당한다. user 턴은 단순 base 메시지.
  */
 import type {
+  Block,
   ChatMessage,
   DocumentT,
   Edit,
   EditEntry,
-  EditProposalMeta,
+  InteractionAction,
   OutlineEntry,
-  OutlineProposalMeta,
 } from "../types";
-import { parseRef } from "../types";
+import { findBlock } from "../types";
 import type { MsgWithIntent } from "../App";
 
 function sectionTitle(doc: DocumentT, code: string | null | undefined): string {
@@ -23,50 +21,62 @@ function sectionTitle(doc: DocumentT, code: string | null | undefined): string {
   return doc.sections[code]?.meta.title ?? code;
 }
 
-function editContent(edit: Edit): string {
-  if (edit.action === "REWRITE") return edit.value;
-  if (edit.action === "REPLACE") return `"${edit.source}" → "${edit.target}"`;
-  return edit.value.content;
+function blockTargetDesc(ref: string, doc: DocumentT): string {
+  const found = findBlock(doc, ref);
+  if (!found) return "";
+  return `'${found.section.meta.title}' 섹션 내 블록`;
 }
 
-function editTargetDesc(ref: string, doc: DocumentT): string {
-  const p = parseRef(ref);
-  if (!p) return ref;
-  return `'${sectionTitle(doc, p.sectionCode)}' 섹션 ${p.idx + 1}번째 블록 (${ref})`;
+/** REWRITE 시 wire 에 실을 Block 을 만든다 (원본 타입/ id 보존). */
+function rewriteBlock(ref: string, value: string, doc: DocumentT): Block {
+  const found = findBlock(doc, ref);
+  const type = found?.section.blocks[ref]?.type ?? "text";
+  return { id: ref, type, content: value };
 }
 
-function toEditProposal(e: EditEntry, doc: DocumentT): EditProposalMeta {
-  return {
+function editToAction(e: EditEntry, doc: DocumentT): InteractionAction {
+  const common = {
+    scope: "block" as const,
     ref: e.ref,
-    action: e.edit.action,
-    target_desc: editTargetDesc(e.ref, doc),
     summary: e.edit.summary ?? "",
-    content: editContent(e.edit),
+    target_desc: blockTargetDesc(e.ref, doc),
     status: e.status,
     instruction: e.instruction ?? null,
   };
+  const edit: Edit = e.edit;
+  if (edit.action === "REWRITE") {
+    return { ...common, action: "REWRITE", block: rewriteBlock(e.ref, edit.value, doc) };
+  }
+  if (edit.action === "REPLACE") {
+    return { ...common, action: "REPLACE", source: edit.source, target: edit.target };
+  }
+  return { ...common, action: "INSERT", block: edit.value };
 }
 
-function outlineTargetDesc(entry: OutlineEntry, doc: DocumentT): string {
-  const a = entry.action;
-  if (a.action === "RENAME") return `'${sectionTitle(doc, a.target)}' (${a.target}) → '${a.title}'`;
-  if (a.action === "ADD")
-    return `'${sectionTitle(doc, a.target)}' (${a.target ?? "루트"}) 아래에 '${a.title}' 추가`;
-  if (a.action === "REMOVE") return `'${sectionTitle(doc, a.target)}' (${a.target}) 섹션 삭제`;
-  // MERGE
-  const list = a.targets.map((c) => `'${sectionTitle(doc, c)}'`).join(", ");
-  const survivor = a.title ?? sectionTitle(doc, a.targets[0]);
-  return `[${list}] → '${survivor}' 병합`;
-}
-
-function toOutlineProposal(e: OutlineEntry, doc: DocumentT): OutlineProposalMeta {
-  return {
-    action: e.action.action,
-    target_desc: outlineTargetDesc(e, doc),
+function outlineToAction(e: OutlineEntry, doc: DocumentT): InteractionAction {
+  const a = e.action;
+  const common = {
+    scope: "outline" as const,
     summary: "",
     status: e.status,
     instruction: e.instruction ?? null,
   };
+  if (a.action === "RENAME") {
+    return { ...common, action: "RENAME", ref: a.target, title: a.title,
+      target_desc: `'${sectionTitle(doc, a.target)}' 섹션` };
+  }
+  if (a.action === "ADD") {
+    return { ...common, action: "ADD", ref: a.target, title: a.title, level: a.level ?? null, position: a.position ?? null,
+      target_desc: `'${sectionTitle(doc, a.target)}' 섹션` };
+  }
+  if (a.action === "REMOVE") {
+    return { ...common, action: "REMOVE", ref: a.target,
+      target_desc: `'${sectionTitle(doc, a.target)}' 섹션` };
+  }
+  // MERGE
+  return { ...common, action: "MERGE", ref: a.targets[0] ?? null, targets: a.targets,
+    title: a.title ?? null, level: a.level ?? null,
+    target_desc: `'${sectionTitle(doc, a.targets[0])}' 섹션` };
 }
 
 export function serializeMessages(messages: MsgWithIntent[], doc: DocumentT): ChatMessage[] {
@@ -74,26 +84,76 @@ export function serializeMessages(messages: MsgWithIntent[], doc: DocumentT): Ch
   for (const m of messages) {
     if (m.role === "user") {
       out.push({
+        type: "base",
         role: "user",
         content: m.content,
         picked_option_index: m.pickedOptionIndex ?? null,
       });
     } else if (m.role === "assistant") {
-      out.push({
-        role: "assistant",
-        content: m.content,
-        intent: m.intent ?? null,
-        clarify_options: m.clarifyOptions ?? null,
-        edit_proposals: m.editEntries?.length
-          ? m.editEntries.map((e) => toEditProposal(e, doc))
-          : null,
-        outline_proposals: m.outlineEntries?.length
-          ? m.outlineEntries.map((e) => toOutlineProposal(e, doc))
-          : null,
-      });
+      const actions: InteractionAction[] = [
+        ...(m.outlineEntries ?? []).map((e) => outlineToAction(e, doc)),
+        ...(m.editEntries ?? []).map((e) => editToAction(e, doc)),
+      ];
+      if (actions.length) {
+        out.push({
+          type: "interaction",
+          role: "assistant",
+          content: m.content,
+          intent: m.intent ?? null,
+          clarify_options: m.clarifyOptions ?? null,
+          actions,
+        });
+      } else {
+        out.push({
+          type: "base",
+          role: "assistant",
+          content: m.content,
+          intent: m.intent ?? null,
+          clarify_options: m.clarifyOptions ?? null,
+        });
+      }
     } else {
-      out.push({ role: m.role, content: m.content });
+      out.push({ type: "base", role: m.role, content: m.content });
     }
   }
   return out;
+}
+
+// ---------- 응답 message.actions → 내부 편집 모델 ----------
+
+export function actionsToEntries(actions: InteractionAction[]): {
+  editEntries: EditEntry[];
+  outlineEntries: OutlineEntry[];
+} {
+  const editEntries: EditEntry[] = [];
+  const outlineEntries: OutlineEntry[] = [];
+  for (const a of actions) {
+    const status = a.status ?? "pending";
+    const instruction = a.instruction ?? undefined;
+    if (a.scope === "block") {
+      if (a.action === "REWRITE") {
+        editEntries.push({ ref: a.ref, status, instruction,
+          edit: { action: "REWRITE", value: a.block.content, summary: a.summary } });
+      } else if (a.action === "REPLACE") {
+        editEntries.push({ ref: a.ref, status, instruction,
+          edit: { action: "REPLACE", source: a.source, target: a.target, summary: a.summary } });
+      } else {
+        editEntries.push({ ref: a.ref, status, instruction,
+          edit: { action: "INSERT", value: a.block, summary: a.summary } });
+      }
+    } else {
+      if (a.action === "RENAME") {
+        outlineEntries.push({ status, instruction, action: { action: "RENAME", target: a.ref, title: a.title } });
+      } else if (a.action === "ADD") {
+        outlineEntries.push({ status, instruction,
+          action: { action: "ADD", target: a.ref, title: a.title, level: a.level ?? null, position: a.position ?? null } });
+      } else if (a.action === "REMOVE") {
+        outlineEntries.push({ status, instruction, action: { action: "REMOVE", target: a.ref ?? "" } });
+      } else {
+        outlineEntries.push({ status, instruction,
+          action: { action: "MERGE", targets: a.targets, title: a.title ?? null, level: a.level ?? null } });
+      }
+    }
+  }
+  return { editEntries, outlineEntries };
 }

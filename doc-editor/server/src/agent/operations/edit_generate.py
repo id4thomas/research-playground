@@ -1,4 +1,6 @@
 """Edit generation operation — produce block-level edits via LLM."""
+import copy
+
 from pydantic import BaseModel, Field
 
 from agent.base import BaseLLMOperation, ChatMessage, format_history
@@ -25,16 +27,50 @@ class _LLMOut(BaseModel):
     edits: list[LLMEdit] = Field(default_factory=list)
 
 
-def render_document(document: Document, target_sections: list[str] | None) -> str:
+def _target_sections(document: Document, target_sections: list[str] | None):
     targets = set(target_sections) if target_sections is not None else set(document.sections.keys())
+    return [(c, s) for c, s in document.sections.items() if c in targets]
+
+
+def render_document(document: Document, target_sections: list[str] | None) -> str:
+    """편집 대상 블록을 UUID와 함께 렌더한다.
+
+    각 블록은 `[<block uuid>] (type) content` 형태로 표기되며, LLM은 수정 대상 블록의
+    UUID를 그대로 `ref` 에 적는다 (ref enum 으로 유효 id만 허용됨).
+    """
     parts = []
-    for code, section in document.sections.items():
-        if code not in targets:
-            continue
+    for code, section in _target_sections(document, target_sections):
         parts.append(f"\n### {section.meta.title} ({code})")
-        for i, b in enumerate(section.blocks):
-            parts.append(f"[{code};{i}] ({b.type}) {b.content}")
+        for b in section.ordered_blocks():
+            parts.append(f"[{b.id}] ({b.type}) {b.content}")
     return "\n".join(parts)
+
+
+def collect_block_ids(document: Document, target_sections: list[str] | None) -> list[str]:
+    """편집 가능한(렌더된) 블록 UUID 목록 — ref enum 제약에 사용."""
+    ids: list[str] = []
+    for _, section in _target_sections(document, target_sections):
+        ids.extend(bid for bid in section.order if bid in section.blocks)
+    return ids
+
+
+def _schema_with_ref_enum(json_schema: dict | None, block_ids: list[str]) -> dict | None:
+    """LLMEdit.ref 를 유효한 블록 UUID enum 으로 좁힌 schema 사본을 만든다.
+
+    유효 id가 없으면(빈 섹션) 자유 문자열인 원본 schema를 그대로 쓴다.
+    """
+    if not json_schema or not block_ids:
+        return json_schema
+    schema = copy.deepcopy(json_schema)
+    try:
+        ref_prop = schema["$defs"]["LLMEdit"]["properties"]["ref"]
+    except KeyError:
+        return schema
+    ref_prop.pop("anyOf", None)
+    ref_prop["type"] = "string"
+    ref_prop["enum"] = block_ids
+    ref_prop["description"] = "수정 대상 블록의 UUID. 위 '문서 블록'에 표기된 id 중 하나만 사용."
+    return schema
 
 
 def _enforce_action_rules(edits: list[LLMEdit]) -> list[LLMEdit]:
@@ -96,7 +132,13 @@ class EditGenerateOperation(BaseLLMOperation):
         )
 
         model = cls._load_model(template.generation_config)
-        json_schema = template.output_schema.json_schema if template.output_schema else None
+        base_schema = template.output_schema.json_schema if template.output_schema else None
+        block_ids = collect_block_ids(document, target_sections)
+        if selected:
+            # 선택된 블록만 수정 가능 → enum 을 교집합으로 좁힌다.
+            sel = set(selected)
+            block_ids = [bid for bid in block_ids if bid in sel] or block_ids
+        json_schema = _schema_with_ref_enum(base_schema, block_ids)
         try:
             msg = await cls.generate(model, messages, json_schema=json_schema)
             result = _LLMOut.model_validate_json(msg.content)

@@ -86,9 +86,10 @@ class ContextCollectOperation(BaseLLMOperation):
 
         valid = [c for c in result.section_codes if c in document.sections]
         if selected:
-            sel_secs = {ref.split(";", 1)[0] for ref in selected}
-            for s in sel_secs:
-                if s in document.sections and s not in valid:
-                    valid.append(s)
+            # selected 는 블록 UUID 목록 → 소속 섹션을 강제 포함.
+            for ref in selected:
+                sec, _ = document.find_block(ref)
+                if sec and sec.meta.code not in valid:
+                    valid.append(sec.meta.code)
         logger.info("[context_collect] %d sections: %s usage=%s", len(valid), valid, usage.model_dump())
         return ContextCollectOutput(section_codes=valid, reasoning=result.reasoning, token_usage=usage)
