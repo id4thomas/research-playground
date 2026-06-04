@@ -8,7 +8,7 @@
 from pydantic import BaseModel, Field
 
 from core.data import Document
-from core.data.chat import ChatMessage, InteractionChatMessage
+from core.data.chat import ChatMessage
 from core.langchain.usage import TokenUsage
 
 __all__ = ["ChatRequest", "ChatResponse"]
@@ -22,9 +22,10 @@ class ChatRequest(BaseModel):
 
 
 class ChatResponse(BaseModel):
-    # 어시스턴트 응답 메시지. 제안된 문서 변경은 message.actions 에 담긴다.
-    message: InteractionChatMessage
-    intent: str = ""
+    # 어시스턴트 응답 메시지. 행위 구분은 message.type 으로만 한다(별도 intent 없음):
+    # base(answer) · interaction(edit/restructure, action scope) · clarify.
+    # 제안된 문서 변경은 InteractionChatMessage.actions 에 담긴다.
+    message: ChatMessage
     suggest_new_session: bool = False
     suggest_new_session_reason: str | None = None
     token_usage: TokenUsage = Field(default_factory=TokenUsage)

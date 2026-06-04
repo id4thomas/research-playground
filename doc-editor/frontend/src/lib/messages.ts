@@ -84,34 +84,23 @@ export function serializeMessages(messages: MsgWithIntent[], doc: DocumentT): Ch
   const out: ChatMessage[] = [];
   for (const m of messages) {
     if (m.role === "user") {
-      out.push({
-        type: "base",
-        role: "user",
-        content: m.content,
-        picked_option_index: m.pickedOptionIndex ?? null,
-      });
+      // 직전 clarify 선택지를 고른 경우 option_reply, 아니면 base.
+      if (m.pickedOptionIndex != null) {
+        out.push({ type: "option_reply", role: "user", content: m.content, picked_option_index: m.pickedOptionIndex });
+      } else {
+        out.push({ type: "base", role: "user", content: m.content });
+      }
     } else if (m.role === "assistant") {
       const actions: InteractionAction[] = [
         ...(m.outlineEntries ?? []).map((e) => outlineToAction(e, doc)),
         ...(m.editEntries ?? []).map((e) => editToAction(e, doc)),
       ];
       if (actions.length) {
-        out.push({
-          type: "interaction",
-          role: "assistant",
-          content: m.content,
-          intent: m.intent ?? null,
-          clarify_options: m.clarifyOptions ?? null,
-          actions,
-        });
+        out.push({ type: "interaction", role: "assistant", content: m.content, actions });
+      } else if (m.clarifyOptions?.length) {
+        out.push({ type: "clarify", role: "assistant", content: m.content, clarify_options: m.clarifyOptions });
       } else {
-        out.push({
-          type: "base",
-          role: "assistant",
-          content: m.content,
-          intent: m.intent ?? null,
-          clarify_options: m.clarifyOptions ?? null,
-        });
+        out.push({ type: "base", role: "assistant", content: m.content });
       }
     } else {
       out.push({ type: "base", role: m.role, content: m.content });

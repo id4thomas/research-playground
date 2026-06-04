@@ -27,8 +27,7 @@ HISTORY_FORMAT_NOTE = """\
 [대화 히스토리 포맷]
 각 메시지에는 다음 태그가 붙어 있습니다:
   - [ASSISTANT · 편집 제안] / [ASSISTANT · 사용자에게 질문] / [ASSISTANT · 답변] / [ASSISTANT · 섹션 구조 변경 제안]
-  - [USER · 선택지 ① 채택] (직전 어시스턴트 질문의 보기 중 선택)
-  - [USER] (자유 입력)
+  - [USER] (사용자 입력. [ASSISTANT · 사용자에게 질문] 직후의 [USER] 본문은 그 질문에 대해 사용자가 고른 답입니다.)
 
 메시지 안의 "[제시된 문서 액션]"(어시스턴트 제안) / "[사용자 조치]"(사용자가 직접 한 변경)은
 블록·섹션 변경을 항목별로 담으며, 각 항목 형식은 다음과 같습니다:
@@ -44,11 +43,8 @@ HISTORY_FORMAT_NOTE = """\
 (뒤의 <대상 설명>은 사람이 읽기 위한 보조 표기일 뿐, 모호하면 [<id>]를 기준으로 삼으세요.
  단, 응답 본문에는 이 식별자를 절대 노출하지 마세요.)
 
-[ASSISTANT · 사용자에게 질문] 메시지 안의 "[제시된 선택지]"는 직전에 사용자에게 보였던 보기 목록입니다.
-직후 user가 "[USER · 선택지 ② 채택]"이면 그 번호의 보기가 골라진 것이고, 단순 "[USER]"이면 직접 입력입니다.
-
 ★ 중요 — 이 태그들은 입력 히스토리 해석용일 뿐입니다.
-당신의 응답 본문에는 절대 "[ASSISTANT · ...]", "[USER · ...]", "[제시된 선택지]", "[제시된 문서 액션]"
+당신의 응답 본문에는 절대 "[ASSISTANT · ...]", "[USER]", "[제시된 문서 액션]"
 같은 태그/머리말을 포함하지 마세요. 사용자가 보는 화면에는 본문만 노출됩니다.
 """
 
@@ -72,7 +68,7 @@ class AgentSpec:
             raise ValueError(f"[{self.name}] unexpected prompt vars: {sorted(extra)}")
         rendered = _JINJA.from_string(self._system_template).render(**vars)
         # 모든 시스템 프롬프트 앞에 히스토리 포맷 해설을 자동 부착.
-        # (LLM이 [ASSISTANT · ...] / [USER · 선택지 ① 채택] 같은 태그를 해석할 수 있게.)
+        # (LLM이 [ASSISTANT · ...] / [USER] 같은 태그를 해석할 수 있게.)
         return HISTORY_FORMAT_NOTE + "\n" + rendered
 
 

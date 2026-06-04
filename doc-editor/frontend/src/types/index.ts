@@ -82,19 +82,31 @@ export type OutlineActionWire =
 
 export type InteractionAction = BlockAction | OutlineActionWire;
 
+// wire 메시지는 type 으로만 구분한다 (별도 intent 필드 없음).
 export type BaseChatMessage = {
   type: "base";
   role: "user" | "assistant" | "system";
   content: string;
-  intent?: Intent | null;
-  clarify_options?: string[] | null;
-  picked_option_index?: number | null;
 };
 export type InteractionChatMessage = Omit<BaseChatMessage, "type"> & {
   type: "interaction";
   actions: InteractionAction[];
 };
-export type ChatMessage = BaseChatMessage | InteractionChatMessage;
+// assistant 가 선택지를 제시하는 메시지.
+export type ClarifyChatMessage = Omit<BaseChatMessage, "type"> & {
+  type: "clarify";
+  clarify_options: string[];
+};
+// user 가 직전 clarify 선택지 중 하나를 고른 메시지.
+export type OptionReplyChatMessage = Omit<BaseChatMessage, "type"> & {
+  type: "option_reply";
+  picked_option_index: number;
+};
+export type ChatMessage =
+  | BaseChatMessage
+  | InteractionChatMessage
+  | ClarifyChatMessage
+  | OptionReplyChatMessage;
 
 // ---------- 내부 편집 모델 (컴포넌트에서 사용) ----------
 
@@ -126,12 +138,21 @@ export type OutlineEntry = {
 };
 
 export type ChatResponse = {
-  message: InteractionChatMessage;
-  intent?: Intent;
+  message: ChatMessage;
   suggest_new_session?: boolean;
   suggest_new_session_reason?: string | null;
   token_usage?: TokenUsage;
 };
+
+/** 응답/표시용 intent 를 메시지에서 파생한다 (wire 엔 intent 필드가 없음). */
+export function deriveIntent(msg: ChatMessage | undefined): Intent {
+  if (!msg) return "";
+  if (msg.type === "clarify") return "clarify";
+  if (msg.type === "interaction") {
+    return msg.actions.some((a) => a.scope === "outline") ? "restructure" : "edit";
+  }
+  return msg.role === "assistant" ? "answer" : "";
+}
 
 // ---------- Helpers ----------
 

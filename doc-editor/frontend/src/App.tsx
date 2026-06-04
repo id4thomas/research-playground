@@ -4,6 +4,7 @@ import { Editor } from "./components/Editor";
 import { ChatPanel } from "./components/ChatPanel";
 import { Resizer } from "./components/Resizer";
 import type { DocumentT, EditEntry, Intent, OutlineEntry, TokenUsage } from "./types";
+import { deriveIntent } from "./types";
 import * as api from "./lib/api";
 import { applyEdit } from "./lib/edits";
 import { applyOutlineAction } from "./lib/outline";
@@ -106,14 +107,17 @@ export default function App() {
         [turnId]: { turnId, endpoint, request: args, response: res, ts: Date.now(), durationMs },
       }));
 
-      // 응답의 구조화된 actions(블록 UUID 참조)를 내부 편집 모델로 변환.
-      const { editEntries, outlineEntries } = actionsToEntries(res.message?.actions ?? []);
+      // 응답 메시지 타입에 따라 페이로드를 꺼낸다 (interaction=actions, clarify=options).
+      const msg = res.message;
+      const actions = msg?.type === "interaction" ? msg.actions : [];
+      const clarifyOptions = msg?.type === "clarify" ? msg.clarify_options : undefined;
+      const { editEntries, outlineEntries } = actionsToEntries(actions);
 
       const assistantMsg: MsgWithIntent = {
         role: "assistant",
-        content: res.message?.content ?? "",
-        intent: res.intent ?? res.message?.intent ?? undefined,
-        clarifyOptions: res.message?.clarify_options ?? undefined,
+        content: msg?.content ?? "",
+        intent: deriveIntent(msg),
+        clarifyOptions,
         editEntries: editEntries.length ? editEntries : undefined,
         outlineEntries: outlineEntries.length ? outlineEntries : undefined,
         turnId,

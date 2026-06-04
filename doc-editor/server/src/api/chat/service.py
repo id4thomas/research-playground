@@ -78,12 +78,10 @@ async def run_chat(req: ChatRequest) -> ChatResponse:
         message=assemble_message(
             content=final.message if final else "",
             document=req.document,
-            intent=resp_intent,
             edits_map=final.edits if final else {},
             outline_actions=final.outline_actions if final else [],
             clarify_options=final.clarify_options if final else [],
         ),
-        intent=resp_intent,
         suggest_new_session=bool(orch.suggest_new_session) if orch else False,
         suggest_new_session_reason=reason,
         token_usage=aggregate_usage(result),
@@ -93,18 +91,16 @@ async def run_chat(req: ChatRequest) -> ChatResponse:
 # ---------------------------------------------------------------------------
 # Direct subgraph runs (/api/chat/{intent})
 # ---------------------------------------------------------------------------
-def _subgraph_response(result: dict, intent: str, document) -> ChatResponse:
+def _subgraph_response(result: dict, document) -> ChatResponse:
     final = result.get("final")
     return ChatResponse(
         message=assemble_message(
             content=final.message if final else "",
             document=document,
-            intent=intent,
             edits_map=final.edits if final else {},
             outline_actions=final.outline_actions if final else [],
             clarify_options=final.clarify_options if final else [],
         ),
-        intent=intent,
         token_usage=aggregate_usage(result),
     )
 
@@ -120,7 +116,7 @@ async def run_edit(req: ChatRequest) -> ChatResponse:
     except Exception as e:
         logger.exception("edit subgraph execution failed")
         raise GraphExecutionError(str(e), graph="edit") from e
-    return _subgraph_response(result, "edit", req.document)
+    return _subgraph_response(result, req.document)
 
 
 async def run_restructure(req: ChatRequest) -> ChatResponse:
@@ -134,7 +130,7 @@ async def run_restructure(req: ChatRequest) -> ChatResponse:
     except Exception as e:
         logger.exception("restructure subgraph execution failed")
         raise GraphExecutionError(str(e), graph="restructure") from e
-    return _subgraph_response(result, "restructure", req.document)
+    return _subgraph_response(result, req.document)
 
 
 async def run_answer(req: ChatRequest) -> ChatResponse:
@@ -148,7 +144,7 @@ async def run_answer(req: ChatRequest) -> ChatResponse:
     except Exception as e:
         logger.exception("answer subgraph execution failed")
         raise GraphExecutionError(str(e), graph="answer") from e
-    return _subgraph_response(result, "answer", req.document)
+    return _subgraph_response(result, req.document)
 
 
 async def run_clarify(req: ChatRequest) -> ChatResponse:
@@ -162,4 +158,4 @@ async def run_clarify(req: ChatRequest) -> ChatResponse:
     except Exception as e:
         logger.exception("clarify subgraph execution failed")
         raise GraphExecutionError(str(e), graph="clarify") from e
-    return _subgraph_response(result, "clarify", req.document)
+    return _subgraph_response(result, req.document)

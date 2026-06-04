@@ -23,6 +23,7 @@ from core.data.chat import (
     AddOutlineAction,
     BaseChatMessage,
     ChatMessage,
+    ClarifyChatMessage,
     InsertBlockAction,
     InteractionAction,
     InteractionChatMessage,
@@ -39,17 +40,15 @@ _STATUS_LABEL = {
     "instructed": "직접 지시",
     "pending": "대기",
 }
-_INTENT_LABEL = {
-    "edit": "편집 제안",
-    "clarify": "사용자에게 질문",
-    "answer": "답변",
-    "restructure": "섹션 구조 변경 제안",
-}
-_CIRCLED = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩"]
-
-
-def _circled(i: int) -> str:
-    return _CIRCLED[i] if 0 <= i < len(_CIRCLED) else f"({i + 1})"
+def _assistant_label(m: BaseChatMessage) -> str:
+    """메시지 type(+action scope)에서 어시스턴트 행위 라벨을 파생한다 (별도 intent 없음)."""
+    if isinstance(m, ClarifyChatMessage):
+        return "사용자에게 질문"
+    if isinstance(m, InteractionChatMessage):
+        if any(getattr(a, "scope", None) == "outline" for a in m.actions):
+            return "섹션 구조 변경 제안"
+        return "편집 제안"
+    return "답변"
 
 
 # ---------------------------------------------------------------------------
@@ -91,28 +90,18 @@ def _render_actions(actions: list[InteractionAction]) -> str:
 
 
 def _format_assistant(m: BaseChatMessage) -> str:
-    intent_label = _INTENT_LABEL.get(m.intent or "", None)
-    header = f"[ASSISTANT · {intent_label}]" if intent_label else "[ASSISTANT]"
+    # clarify 의 선택지 목록(clarify_options)은 히스토리에 싣지 않는다 —
+    # 질문 본문만 남기고, 사용자가 고른 값은 다음 user 턴 content 로 들어온다.
+    header = f"[ASSISTANT · {_assistant_label(m)}]"
     out = f"{header} {m.content or ''}".rstrip()
-    if m.clarify_options:
-        opts = "\n".join(f"  {_circled(i)} {o}" for i, o in enumerate(m.clarify_options))
-        out += f"\n\n[제시된 선택지]\n{opts}"
     if isinstance(m, InteractionChatMessage) and m.actions:
         out += "\n\n[제시된 문서 액션]\n" + _render_actions(m.actions)
     return out
 
 
-def _format_user(m: BaseChatMessage, prev: BaseChatMessage | None) -> str:
-    tag = "[USER]"
-    if (
-        m.picked_option_index is not None
-        and prev is not None
-        and prev.role == "assistant"
-        and prev.clarify_options
-        and 0 <= m.picked_option_index < len(prev.clarify_options)
-    ):
-        tag = f"[USER · 선택지 {_circled(m.picked_option_index)} 채택]"
-    out = f"{tag} {m.content or ''}".rstrip()
+def _format_user(m: BaseChatMessage) -> str:
+    # 선택지를 고른 경우(OptionReply)도 고른 값(content)만 그대로 싣는다.
+    out = f"[USER] {m.content or ''}".rstrip()
     if isinstance(m, InteractionChatMessage) and m.actions:
         out += "\n\n[사용자 조치]\n" + _render_actions(m.actions)
     return out
@@ -121,15 +110,13 @@ def _format_user(m: BaseChatMessage, prev: BaseChatMessage | None) -> str:
 def wire_to_llm(messages: list[ChatMessage]) -> list[dict]:
     """wire ChatMessage 리스트 → LLM 텍스트 턴 ({'role','content'} dict)."""
     out: list[dict] = []
-    prev: BaseChatMessage | None = None
     for m in messages:
         if m.role == "user":
-            out.append({"role": "user", "content": _format_user(m, prev)})
+            out.append({"role": "user", "content": _format_user(m)})
         elif m.role == "assistant":
             out.append({"role": "assistant", "content": _format_assistant(m)})
         else:
             out.append({"role": m.role, "content": m.content})
-        prev = m
     return out
 
 
@@ -198,18 +185,21 @@ def assemble_message(
     *,
     content: str,
     document: Document,
-    intent: str = "",
     edits_map: dict | None = None,
     outline_actions: list | None = None,
     clarify_options: list[str] | None = None,
-) -> InteractionChatMessage:
-    """에이전트 FinalOutput → wire 응답 메시지 (assistant)."""
+) -> ChatMessage:
+    """에이전트 FinalOutput → wire 응답 메시지 (assistant).
+
+    페이로드에 따라 메시지 타입을 고른다 (type 이 곧 행위 구분, 별도 intent 없음):
+      - 문서 액션 있음 → InteractionChatMessage (edit/restructure)
+      - 선택지 있음     → ClarifyChatMessage
+      - 그 외           → BaseChatMessage (answer)
+    """
     actions = _edits_to_actions(document, edits_map or {})
     actions += _outline_to_actions(document, outline_actions or [])
-    return InteractionChatMessage(
-        role="assistant",
-        content=content,
-        intent=intent or None,  # type: ignore[arg-type]
-        clarify_options=clarify_options or None,
-        actions=actions,
-    )
+    if actions:
+        return InteractionChatMessage(role="assistant", content=content, actions=actions)
+    if clarify_options:
+        return ClarifyChatMessage(role="assistant", content=content, clarify_options=clarify_options)
+    return BaseChatMessage(role="assistant", content=content)

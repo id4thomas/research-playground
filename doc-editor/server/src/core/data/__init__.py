@@ -24,9 +24,11 @@ from .chat import (
     BaseChatMessage,
     ChatMessage,
     ChatMessageAdapter,
+    ClarifyChatMessage,
     InteractionAction,
     InteractionActionAdapter,
     InteractionChatMessage,
+    OptionReplyChatMessage,
 )
 from .chat import BlockAction as WireBlockAction
 from .chat import OutlineAction as WireOutlineAction
@@ -54,6 +56,8 @@ __all__ = [
     "ChatMessage",
     "BaseChatMessage",
     "InteractionChatMessage",
+    "ClarifyChatMessage",
+    "OptionReplyChatMessage",
     "InteractionAction",
     "WireBlockAction",
     "WireOutlineAction",

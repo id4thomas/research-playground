@@ -25,6 +25,15 @@
 
 ## 2. wire 메시지 모양
 
+메시지는 `type` 디스크리미네이터로 구분되며, 각 타입은 자기 페이로드만 갖는다:
+
+| type | 주체 | 추가 필드 |
+|---|---|---|
+| `base` | user/assistant/system | (없음) |
+| `interaction` | assistant | `actions[]` (문서 변경) |
+| `clarify` | assistant | `clarify_options[]` (선택지 제시) |
+| `option_reply` | user | `picked_option_index` (선택지 선택) |
+
 ```jsonc
 // 단순 텍스트 턴
 { "type": "base", "role": "user", "content": "도입부를 더 간결하게 해줘" }
@@ -34,7 +43,6 @@
   "type": "interaction",
   "role": "assistant",
   "content": "'도입부' 섹션의 첫 문단을 간결하게 다듬었습니다.",
-  "intent": "edit",
   "actions": [
     {
       "scope": "block", "action": "REWRITE",
@@ -118,8 +126,7 @@
 ```jsonc
 // 서버 → 프론트 (message)
 {
-  "type":"interaction", "role":"assistant", "intent":"edit",
-  "content":"'배경' 섹션 첫 문단을 줄였습니다.",
+  "type":"interaction", "role":"assistant", "content":"'배경' 섹션 첫 문단을 줄였습니다.",
   "actions":[
     {
       "scope":"block",
@@ -141,8 +148,7 @@
 ```jsonc
 [
   { "type":"base", "role":"user", "content":"배경 섹션 첫 문단을 줄여줘" },
-  { "type":"interaction", "role":"assistant", "intent":"edit",
-    "content":"'배경' 섹션 첫 문단을 줄였습니다.",
+  { "type":"interaction", "role":"assistant", "content":"'배경' 섹션 첫 문단을 줄였습니다.",
     "actions":[
       {
         "scope":"block",
@@ -167,8 +173,7 @@
 
 ```jsonc
 {
-  "type":"interaction","role":"assistant","intent":"edit",
-  "content":"표현을 더 단호하게 바꿔봤습니다.",
+  "type":"interaction","role":"assistant","content":"표현을 더 단호하게 바꿔봤습니다.",
   "actions":[
     {
       "scope":"block","action":"REWRITE","ref":"b2",
@@ -272,28 +277,28 @@
 
 > 어시스턴트가 편집 대신 되묻고, 사용자가 보기를 고른다.
 
+clarify(선택지 제시)와 option_reply(선택)는 각각 **전용 메시지 타입**이다 — `clarify_options`/
+`picked_option_index` 는 base 메시지에 얹지 않고 자기 타입이 들고 있다.
+
 ```jsonc
-// 서버 → 프론트
-{ "type":"base","role":"assistant","intent":"clarify",
-  "content":"어떤 방향으로 줄일까요?",
+// 서버 → 프론트 (type=clarify)
+{ "type":"clarify","role":"assistant","content":"어떤 방향으로 줄일까요?",
   "clarify_options":["핵심만 1문장","절반 분량","불필요한 예시만 제거"] }
 
-// 다음 턴, 프론트 → 서버 (사용자가 ②를 고름)
-{ "type":"base","role":"user","content":"절반 분량","picked_option_index":1 }
+// 다음 턴, 프론트 → 서버 (사용자가 ②를 고름 → type=option_reply)
+{ "type":"option_reply","role":"user","content":"절반 분량","picked_option_index":1 }
 ```
 
-직렬화:
+직렬화 (LLM 히스토리): **선택지 목록은 싣지 않고, 사용자가 고른 값만** 남긴다.
+`clarify_options`/`picked_option_index` 는 프론트 렌더·리플레이용으로 wire 에만 있고 LLM엔 안 들어간다.
 
 ```
 [ASSISTANT · 사용자에게 질문] 어떤 방향으로 줄일까요?
-[제시된 선택지]
-  ① 핵심만 1문장
-  ② 절반 분량
-  ③ 불필요한 예시만 제거
-[USER · 선택지 ② 채택] 절반 분량
+[USER] 절반 분량
 ```
 
-→ LLM은 "사용자가 ②(절반 분량)를 골랐다"로 해석한다.
+→ LLM은 "질문에 대해 사용자가 '절반 분량'으로 답했다"로 해석한다. (보기 ①②③ 전체를 매번
+히스토리에 쌓지 않아 토큰을 아끼고, 고른 결론만 명확히 전달된다.)
 
 ---
 

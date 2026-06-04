@@ -32,6 +32,8 @@ __all__ = [
     "InteractionAction",
     "BaseChatMessage",
     "InteractionChatMessage",
+    "ClarifyChatMessage",
+    "OptionReplyChatMessage",
     "ChatMessage",
     "ChatMessageAdapter",
     "InteractionActionAdapter",
@@ -123,30 +125,42 @@ InteractionActionAdapter: TypeAdapter[InteractionAction] = TypeAdapter(Interacti
 # ---------------------------------------------------------------------------
 # Chat messages (wire)
 # ---------------------------------------------------------------------------
-Intent = Literal["edit", "clarify", "answer", "restructure"]
-
-
+# 메시지 종류는 `type` 하나로만 구분한다(별도 intent 필드 없음):
+#   base(=answer/일반) · interaction(edit/restructure, action scope로 구분) · clarify · option_reply
 class BaseChatMessage(BaseModel):
+    """단순 텍스트 메시지. role/content 만 갖는다."""
     type: Literal["base"] = "base"
     role: Literal["user", "assistant", "system"] = "user"
     content: str = Field("", description="대표 메시지 본문.")
-    # --- assistant 턴 메타 ---
-    intent: Intent | None = None
-    clarify_options: list[str] | None = Field(None, description="어시스턴트가 제시한 선택지.")
-    # --- user 턴 메타 ---
-    picked_option_index: int | None = Field(
-        None, description="직전 clarify 선택지 중 고른 인덱스(0-base). None=직접 입력."
-    )
 
 
 class InteractionChatMessage(BaseChatMessage):
-    """문서 수정이 동반된 메시지 (텍스트 + 구조화된 actions)."""
+    """문서 수정이 동반된 (assistant) 메시지 — 텍스트 + 구조화된 actions."""
     type: Literal["interaction"] = "interaction"  # type: ignore[assignment]
     actions: list[InteractionAction] = Field(default_factory=list)
 
 
+class ClarifyChatMessage(BaseChatMessage):
+    """assistant가 사용자에게 선택지를 제시하는 메시지."""
+    type: Literal["clarify"] = "clarify"  # type: ignore[assignment]
+    role: Literal["user", "assistant", "system"] = "assistant"
+    clarify_options: list[str] = Field(default_factory=list, description="제시한 선택지 목록.")
+
+
+class OptionReplyChatMessage(BaseChatMessage):
+    """user가 직전 clarify 선택지 중 하나를 고른 메시지."""
+    type: Literal["option_reply"] = "option_reply"  # type: ignore[assignment]
+    role: Literal["user", "assistant", "system"] = "user"
+    picked_option_index: int = Field(..., description="고른 선택지 인덱스(0-base).")
+
+
 ChatMessage = Annotated[
-    Union[BaseChatMessage, InteractionChatMessage],
+    Union[
+        BaseChatMessage,
+        InteractionChatMessage,
+        ClarifyChatMessage,
+        OptionReplyChatMessage,
+    ],
     Field(discriminator="type"),
 ]
 
