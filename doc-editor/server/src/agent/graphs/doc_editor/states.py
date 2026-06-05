@@ -6,7 +6,7 @@ from langgraph.graph.message import add_messages
 from typing_extensions import TypedDict
 
 from agent.graphs.doc_assistant.states import FinalOutput
-from agent.operations import ContextCollectOutput, EditGenerateOutput
+from agent.operations import ContextCollectOutput, BlockEditGenerateOutput
 from core.data import Document
 
 
@@ -16,5 +16,5 @@ class EditorState(TypedDict, total=False):
     selected: list[str] | None
     hint_sections: list[str] | None  # optional target-section hint from caller
     context: ContextCollectOutput
-    edit: EditGenerateOutput
+    edit: BlockEditGenerateOutput
     final: FinalOutput

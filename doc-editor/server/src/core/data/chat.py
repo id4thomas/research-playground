@@ -5,18 +5,23 @@
 
 설계 의도:
   - 기존 히스토리는 ref를 `"S1;0"`(섹션코드;인덱스)로 표현해, 편집이 누적되면
-    인덱스가 어긋나 추적이 어려웠다. 여기서는 액션이 블록 **UUID**(`ref`)를 가리킨다.
+    인덱스가 어긋나 추적이 어려웠다. 여기서는 상호작용이 블록 **UUID**(`ref`)를 가리킨다.
   - "사용자/어시스턴트가 무엇을 했는지"를 단순 텍스트가 아니라 구조화된
-    `InteractionAction` 으로 담아 정보량을 높이고, 프론트엔드가 그대로 반영/리플레이한다.
+    `Interaction` 으로 담아 정보량을 높이고, 프론트엔드가 그대로 반영/리플레이한다.
+
+명명: "무엇을 했는지"의 한 단위는 `Interaction`(상호작용)이고, 그 안의 "무엇을 어떻게
+바꾸는가"(op + 페이로드)는 **재사용된 도메인 모델**(`core.data.edit.BlockEdit` /
+`core.data.edit.OutlineEdit`)을 합성해 담는다. 이렇게 하면 op 종류를 가리키는
+`action` 필드가 `BlockEdit`/`OutlineEdit` 한 곳에만 존재해 의미 충돌이 없다.
 
 계층:
   ChatMessage (type 디스크리미네이터)
   ├─ BaseChatMessage         : 단순 텍스트 (+ clarify 선택지 등 메타)
-  └─ InteractionChatMessage  : 텍스트 + 구조화된 actions[]
+  └─ InteractionChatMessage  : 텍스트 + 구조화된 interactions[]
 
-  InteractionAction (scope 디스크리미네이터)
-  ├─ BlockAction   (REWRITE / REPLACE / INSERT)   — 블록 본문 수정 (ref=블록 UUID)
-  └─ OutlineAction (ADD / MERGE / RENAME / REMOVE) — 섹션 구조 변경 (ref=섹션 code)
+  Interaction (scope 디스크리미네이터) = 상호작용 메타(status/summary/target_desc) +
+  ├─ BlockInteraction   (ref=블록 UUID, edit: BlockEdit)       — 블록 본문 수정
+  └─ OutlineInteraction (outline: OutlineEdit)                 — 섹션 구조 변경
 """
 from __future__ import annotations
 
@@ -24,102 +29,53 @@ from typing import Annotated, Literal, Union
 
 from pydantic import BaseModel, Field, TypeAdapter
 
-from core.data.document import Block
+from core.data.edit import BlockEdit, OutlineEdit
 
 __all__ = [
-    "BlockAction",
-    "OutlineAction",
-    "InteractionAction",
+    "BaseInteraction",
+    "BlockInteraction",
+    "OutlineInteraction",
+    "Interaction",
     "BaseChatMessage",
     "InteractionChatMessage",
     "ClarifyChatMessage",
     "OptionReplyChatMessage",
     "ChatMessage",
     "ChatMessageAdapter",
-    "InteractionActionAdapter",
+    "InteractionAdapter",
 ]
 
 
 # ---------------------------------------------------------------------------
-# Interaction actions — "무엇을 했는지" 구조화
+# Interaction — "무엇을 했는지" 구조화 (상호작용 메타 + 재사용된 도메인 페이로드)
 # ---------------------------------------------------------------------------
-class BaseInteractionAction(BaseModel):
+class BaseInteraction(BaseModel):
     # pending: 제안만 함 / accepted: 사용자 수락 / declined: 거절 / instructed: 직접 지시
     status: Literal["pending", "accepted", "declined", "instructed"] = "pending"
-    summary: str = Field("", description="이 액션이 무엇을 어떻게 바꾸는지 한국어 1줄 요약.")
+    summary: str = Field("", description="이 상호작용이 무엇을 어떻게 바꾸는지 한국어 1줄 요약.")
     target_desc: str = Field("", description="사람이 읽을 대상 설명 (예: \"'배경' 섹션 1번째 블록\").")
     instruction: str | None = Field(None, description="status=instructed 일 때 사용자의 직접 지시문.")
 
 
-# --- Block scope ---
-class BaseBlockAction(BaseInteractionAction):
+class BlockInteraction(BaseInteraction):
+    """블록 본문 수정 상호작용. `edit` 가 무엇을 어떻게 바꾸는지 담는다."""
     scope: Literal["block"] = "block"
     ref: str = Field(..., description="대상 블록 id (UUID). INSERT는 기준(앵커) 블록 id.")
+    edit: BlockEdit
 
 
-class RewriteBlockAction(BaseBlockAction):
-    action: Literal["REWRITE"] = "REWRITE"
-    block: Block
-
-
-class ReplaceBlockAction(BaseBlockAction):
-    action: Literal["REPLACE"] = "REPLACE"
-    source: str
-    target: str
-
-
-class InsertBlockAction(BaseBlockAction):
-    action: Literal["INSERT"] = "INSERT"
-    block: Block
-
-
-BlockAction = Annotated[
-    Union[RewriteBlockAction, ReplaceBlockAction, InsertBlockAction],
-    Field(discriminator="action"),
-]
-
-
-# --- Outline scope ---
-class BaseOutlineAction(BaseInteractionAction):
+class OutlineInteraction(BaseInteraction):
+    """섹션 구조 변경 상호작용. `outline` 이 대상 섹션 code/op 를 담는다."""
     scope: Literal["outline"] = "outline"
-    ref: str | None = Field(None, description="대상 섹션 code (ADD는 부모 code, None=루트).")
+    outline: OutlineEdit
 
 
-class AddOutlineAction(BaseOutlineAction):
-    action: Literal["ADD"] = "ADD"
-    title: str = ""
-    level: int | None = None
-    position: int | None = None
-
-
-class MergeOutlineAction(BaseOutlineAction):
-    action: Literal["MERGE"] = "MERGE"
-    targets: list[str] = Field(default_factory=list)
-    title: str | None = None
-    level: int | None = None
-
-
-class RenameOutlineAction(BaseOutlineAction):
-    action: Literal["RENAME"] = "RENAME"
-    title: str = ""
-
-
-class RemoveOutlineAction(BaseOutlineAction):
-    action: Literal["REMOVE"] = "REMOVE"
-
-
-OutlineAction = Annotated[
-    Union[AddOutlineAction, MergeOutlineAction, RenameOutlineAction, RemoveOutlineAction],
-    Field(discriminator="action"),
-]
-
-
-InteractionAction = Annotated[
-    Union[BlockAction, OutlineAction],
+Interaction = Annotated[
+    Union[BlockInteraction, OutlineInteraction],
     Field(discriminator="scope"),
 ]
 
-InteractionActionAdapter: TypeAdapter[InteractionAction] = TypeAdapter(InteractionAction)
+InteractionAdapter: TypeAdapter[Interaction] = TypeAdapter(Interaction)
 
 
 # ---------------------------------------------------------------------------
@@ -135,9 +91,9 @@ class BaseChatMessage(BaseModel):
 
 
 class InteractionChatMessage(BaseChatMessage):
-    """문서 수정이 동반된 (assistant) 메시지 — 텍스트 + 구조화된 actions."""
+    """문서 수정이 동반된 (assistant) 메시지 — 텍스트 + 구조화된 interactions."""
     type: Literal["interaction"] = "interaction"  # type: ignore[assignment]
-    actions: list[InteractionAction] = Field(default_factory=list)
+    interactions: list[Interaction] = Field(default_factory=list)
 
 
 class ClarifyChatMessage(BaseChatMessage):

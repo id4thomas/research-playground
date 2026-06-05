@@ -1,18 +1,49 @@
-"""Edit generation operation — produce block-level edits via LLM."""
+"""Block edit generation operation — produce block-level edits via LLM."""
 import copy
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
 from agent.base import BaseLLMOperation, ChatMessage, format_history
-from core.data import Document, LLMEdit
+from core.data import (
+    BlockEdit,
+    Document,
+    InsertBlockEdit,
+    ReplaceBlockEdit,
+    RewriteBlockEdit,
+    make_block,
+)
 from core.langchain.usage import TokenUsage
 from core.logger import get_logger
 
 logger = get_logger(__name__)
 
 
-class EditGenerateOutput(BaseModel):
-    edits: list[LLMEdit] = Field(default_factory=list)
+class LLMEdit(BaseModel):
+    """LLM이 직접 뱉는 평탄(flat)한 edit 모델 — **이 operation 내부에서만 쓴다**.
+
+    도메인 모델(`core.data.edit.BlockEdit`)과 분리해 operations 레이어에 둔다 — LLM 출력
+    스키마 전용이라 value/value_type/value_format 로 콘텐츠를 펼쳐 받는다. operation 밖으로
+    나갈 때는 `_to_block_edit` 으로 검증·조립해 `BlockEdit`(Block 보유, core.data 명세)으로
+    좁혀 내보내므로, `LLMEdit` 은 외부(노드/State/wire)로 새지 않는다.
+    """
+    ref: str = Field(description="수정 대상 블록의 UUID (문서 블록에 표기된 id).")
+    action: Literal["REWRITE", "REPLACE", "INSERT"]
+    summary: str = Field(
+        default="",
+        description="이 수정이 무엇을 어떻게 바꾸는지 한국어 1줄 요약 (20~60자, 변경 의도/핵심만).",
+    )
+    value: str | None = None
+    value_type: Literal["text", "equation", "table"] | None = None
+    # INSERT 새 블록의 콘텐츠 포맷. 미지정 시 타입별 기본값(text=markdown/table=html/equation=tex).
+    value_format: Literal["markdown", "html", "tex"] | None = None
+    source: str | None = None
+    target: str | None = None
+
+
+class BlockEditGenerateOutput(BaseModel):
+    # core.data 명세(BlockEdit)로 내보낸다. ref(블록 UUID) → 그 블록에 대한 edit 목록.
+    edits: dict[str, list[BlockEdit]] = Field(default_factory=dict)
     message: str | None = None
     token_usage: TokenUsage = Field(default_factory=TokenUsage)
 
@@ -93,7 +124,43 @@ def _enforce_action_rules(edits: list[LLMEdit]) -> list[LLMEdit]:
     return [e for e in out if not (e.action != "REWRITE" and e.ref in rewrite_seen)]
 
 
-class EditGenerateOperation(BaseLLMOperation):
+def _to_block_edit(le: LLMEdit, document: Document) -> BlockEdit | None:
+    """평탄 `LLMEdit` → core.data 명세 `BlockEdit`. REWRITE/INSERT 는 `Block` 을 조립한다.
+
+    - REWRITE: 같은 블록을 재작성 → 원본 id/타입/format 을 유지한 채 새 content 로 조립.
+    - INSERT : value_type/value_format 로 새 블록을 조립 (새 id).
+    """
+    if le.action == "REWRITE" and le.value:
+        _sec, orig = document.find_block(le.ref)
+        block = make_block(
+            orig.type if orig else "text", le.value, id=le.ref,
+            format=orig.format if orig else None,
+        )
+        return RewriteBlockEdit(block=block, summary=le.summary)
+    if le.action == "REPLACE" and le.source and le.target:
+        return ReplaceBlockEdit(source=le.source, target=le.target, summary=le.summary)
+    if le.action == "INSERT" and le.value:
+        return InsertBlockEdit(
+            block=make_block(le.value_type or "text", le.value, format=le.value_format),
+            summary=le.summary,
+        )
+    return None
+
+
+def _to_edits_map(llm_edits: list[LLMEdit], document: Document) -> dict[str, list[BlockEdit]]:
+    """LLMEdit 목록 → ref별 BlockEdit 맵. ref당 REWRITE는 1개만 남긴다."""
+    out: dict[str, list[BlockEdit]] = {}
+    for le in llm_edits:
+        be = _to_block_edit(le, document)
+        if be:
+            out.setdefault(le.ref, []).append(be)
+    for ref, lst in out.items():
+        rewrites = [e for e in lst if isinstance(e, RewriteBlockEdit)]
+        out[ref] = [rewrites[0]] if rewrites else lst
+    return out
+
+
+class BlockEditGenerateOperation(BaseLLMOperation):
     PROMPT_NAME = "edit"
 
     @classmethod
@@ -104,7 +171,7 @@ class EditGenerateOperation(BaseLLMOperation):
         selected: list[str] | None = None,
         target_sections: list[str] | None = None,
         history: list[ChatMessage] | None = None,
-    ) -> EditGenerateOutput:
+    ) -> BlockEditGenerateOutput:
         """Produce block-level edits for the document.
 
         Args:
@@ -145,17 +212,19 @@ class EditGenerateOperation(BaseLLMOperation):
             result = _LLMOut.model_validate_json(msg.content)
             usage = cls.parse_token_usage(msg)
         except Exception as e:
-            logger.warning("[edit_generate] structured output failed: %s", e)
-            return EditGenerateOutput(
-                edits=[],
+            logger.warning("[block_edit_generate] structured output failed: %s", e)
+            return BlockEditGenerateOutput(
+                edits={},
                 message="수정안을 생성하지 못했습니다. 요청 범위를 좁혀 다시 시도해 주세요.",
             )
 
-        logger.info("[edit_generate] %d edit(s) proposed usage=%s", len(result.edits), usage.model_dump())
+        logger.info("[block_edit_generate] %d edit(s) proposed usage=%s", len(result.edits), usage.model_dump())
         deduped = _enforce_action_rules(result.edits)
         if len(deduped) != len(result.edits):
             logger.info(
-                "[edit_generate] enforced action rules: %d → %d edit(s)",
+                "[block_edit_generate] enforced action rules: %d → %d edit(s)",
                 len(result.edits), len(deduped),
             )
-        return EditGenerateOutput(edits=deduped, message=result.message, token_usage=usage)
+        # operation 밖으로는 core.data 명세(BlockEdit)로만 내보낸다 (LLMEdit 봉인).
+        edits_map = _to_edits_map(deduped, document)
+        return BlockEditGenerateOutput(edits=edits_map, message=result.message, token_usage=usage)

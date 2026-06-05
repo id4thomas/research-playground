@@ -1,9 +1,9 @@
-"""Edit node — wraps EditGenerateOperation."""
+"""Edit node — wraps BlockEditGenerateOperation."""
 from langchain_core.runnables import RunnableConfig
 
 from agent.base import BaseNode, split_instruction_history
 from agent.graphs.doc_editor.states import EditorState
-from agent.operations import EditGenerateOperation
+from agent.operations import BlockEditGenerateOperation
 
 
 class EditNode(BaseNode):
@@ -17,7 +17,7 @@ class EditNode(BaseNode):
             target = ctx.section_codes
         else:
             target = state.get("hint_sections")
-        out = await EditGenerateOperation.run(
+        out = await BlockEditGenerateOperation.run(
             instruction=instruction,
             document=state["document"],
             selected=state.get("selected"),

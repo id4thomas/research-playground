@@ -4,7 +4,7 @@ from langchain_core.runnables import RunnableConfig
 from agent.base import BaseNode
 from agent.graphs.doc_assistant.states import FinalOutput
 from agent.graphs.doc_editor.states import EditorState
-from agent.operations import EditAssembleOperation, StripCodesOperation
+from agent.operations import StripCodesOperation
 
 
 class EditAssembleNode(BaseNode):
@@ -13,7 +13,8 @@ class EditAssembleNode(BaseNode):
     async def run(self, state: EditorState, config: RunnableConfig) -> dict:
         edit_out = state.get("edit")
         doc = state["document"]
-        edits_map = await EditAssembleOperation.run(edit_out.edits) if edit_out else {}
+        # 생성 operation 이 이미 core.data 명세(BlockEdit)로 내보낸다 — 여기선 그대로 싣는다.
+        edits_map = edit_out.edits if edit_out else {}
         message = await StripCodesOperation.run((edit_out.message if edit_out else "") or "", doc)
         return {"final": FinalOutput(message=message, edits=edits_map)}
 

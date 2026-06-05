@@ -23,8 +23,8 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     # 어시스턴트 응답 메시지. 행위 구분은 message.type 으로만 한다(별도 intent 없음):
-    # base(answer) · interaction(edit/restructure, action scope) · clarify.
-    # 제안된 문서 변경은 InteractionChatMessage.actions 에 담긴다.
+    # base(answer) · interaction(edit/restructure, interaction scope) · clarify.
+    # 제안된 문서 변경은 InteractionChatMessage.interactions 에 담긴다.
     message: ChatMessage
     suggest_new_session: bool = False
     suggest_new_session_reason: str | None = None

@@ -47,6 +47,30 @@ messages:
 
       미사용 필드는 반드시 null. 코드블록 없이 순수 JSON만 반환합니다.
 
+      ★★★ 출력 형식 (JSON) ★★★
+      최상위는 `message`(문자열)와 `edits`(배열) 를 가진 객체입니다. `edits` 의 각 원소는
+      아래 필드를 가진 edit 입니다 (action 에 따라 채우는 필드가 다릅니다):
+        - ref          : 수정 대상 블록 UUID (필수, 표기된 id 중 하나)
+        - action       : REWRITE | REPLACE | INSERT (필수)
+        - summary      : 변경 의도 1줄 요약 (필수)
+        - value        : REWRITE/INSERT 의 새 콘텐츠
+        - value_type   : INSERT 새 블록 타입 (text|equation|table)
+        - value_format : INSERT 콘텐츠 포맷 (markdown|html|tex, 생략 시 타입 기본값)
+        - source/target: REPLACE 의 치환 대상/결과 substring
+
+      예시 (형식 참고용 — 값은 실제 문서에 맞게 채우세요):
+      {
+        "message": "'문제점' 섹션의 첫 부분을 보완하고 한계 문단을 추가했습니다.",
+        "edits": [
+          {"ref": "9f2c…", "action": "REWRITE", "summary": "한계점을 더 구체적으로 보완",
+           "value": "본 연구의 한계는 …", "value_type": null, "value_format": null, "source": null, "target": null},
+          {"ref": "9f2c…", "action": "REPLACE", "summary": "오타 수정",
+           "value": null, "value_type": null, "value_format": null, "source": "기존표현", "target": "수정표현"},
+          {"ref": "a1b2…", "action": "INSERT", "summary": "관련 연구 문단 추가",
+           "value": "최근 연구들은 …", "value_type": "text", "value_format": "markdown", "source": null, "target": null}
+        ]
+      }
+
       ## 문서 블록
       {{ doc_text }}{{ selected_ctx }}
 
@@ -81,7 +105,7 @@ output_schema:
       LLMEdit:
         type: object
         title: LLMEdit
-        description: LLM이 직접 뱉는 평탄한 edit 모델 (서버에서 Edit으로 좁힌다).
+        description: LLM이 직접 뱉는 평탄한 edit 모델 (서버에서 BlockEdit으로 좁힌다).
         required: [ref, action]
         properties:
           ref:

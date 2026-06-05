@@ -12,26 +12,21 @@
 """
 from __future__ import annotations
 
-from core.data import (
-    Document,
-    InsertEdit,
-    ReplaceEdit,
-    RewriteEdit,
-    make_block,
-)
+from core.data import Document, OutlineEdit
 from core.data.chat import (
-    AddOutlineAction,
     BaseChatMessage,
+    BlockInteraction,
     ChatMessage,
     ClarifyChatMessage,
-    InsertBlockAction,
-    InteractionAction,
+    Interaction,
     InteractionChatMessage,
-    MergeOutlineAction,
-    RemoveOutlineAction,
-    RenameOutlineAction,
-    ReplaceBlockAction,
-    RewriteBlockAction,
+    OutlineInteraction,
+)
+from core.data.edit import (
+    BlockEdit,
+    InsertBlockEdit,
+    ReplaceBlockEdit,
+    RewriteBlockEdit,
 )
 
 _STATUS_LABEL = {
@@ -45,7 +40,7 @@ def _assistant_label(m: BaseChatMessage) -> str:
     if isinstance(m, ClarifyChatMessage):
         return "사용자에게 질문"
     if isinstance(m, InteractionChatMessage):
-        if any(getattr(a, "scope", None) == "outline" for a in m.actions):
+        if any(i.scope == "outline" for i in m.interactions):
             return "섹션 구조 변경 제안"
         return "편집 제안"
     return "답변"
@@ -54,36 +49,55 @@ def _assistant_label(m: BaseChatMessage) -> str:
 # ---------------------------------------------------------------------------
 # wire → LLM (히스토리 직렬화)
 # ---------------------------------------------------------------------------
-def _action_content(a: InteractionAction) -> str:
-    if isinstance(a, (RewriteBlockAction, InsertBlockAction)):
-        return a.block.content
-    if isinstance(a, ReplaceBlockAction):
-        return f'"{a.source}" → "{a.target}"'
-    if isinstance(a, (RenameOutlineAction, AddOutlineAction)):
-        return a.title
-    return ""
+def _interaction_op(i: Interaction) -> str:
+    """상호작용의 op 종류 라벨 (REWRITE/INSERT/… / ADD/MERGE/…)."""
+    return i.edit.action if isinstance(i, BlockInteraction) else i.outline.action
 
 
-def _render_actions(actions: list[InteractionAction]) -> str:
+def _outline_ref(oe: OutlineEdit) -> str:
+    """outline edit 이 가리키는 섹션 code (MERGE는 생존 섹션=첫 target)."""
+    targets = getattr(oe, "targets", None)
+    return (targets[0] if targets else None) or getattr(oe, "target", None) or ""
+
+
+def _interaction_ref(i: Interaction) -> str:
+    """상호작용이 가리키는 대상 식별자 (블록 UUID 또는 섹션 code)."""
+    if isinstance(i, BlockInteraction):
+        return i.ref
+    return _outline_ref(i.outline)
+
+
+def _interaction_content(i: Interaction) -> str:
+    if isinstance(i, BlockInteraction):
+        e = i.edit
+        if isinstance(e, (RewriteBlockEdit, InsertBlockEdit)):
+            return e.block.content
+        if isinstance(e, ReplaceBlockEdit):
+            return f'"{e.source}" → "{e.target}"'
+        return ""
+    return getattr(i.outline, "title", "") or ""
+
+
+def _render_interactions(interactions: list[Interaction]) -> str:
     lines: list[str] = []
-    for i, a in enumerate(actions):
-        status = _STATUS_LABEL.get(a.status, a.status)
-        if a.status == "instructed" and a.instruction:
-            status = f'직접 지시("{a.instruction}")'
+    for idx, i in enumerate(interactions):
+        status = _STATUS_LABEL.get(i.status, i.status)
+        if i.status == "instructed" and i.instruction:
+            status = f'직접 지시("{i.instruction}")'
         # 블록 UUID를 그대로 노출한다. 문서 렌더(render_document)가 같은 `[uuid]`
-        # 키로 블록을 출력하므로, 모델이 히스토리 액션 ↔ 현재 블록을 결정적으로
+        # 키로 블록을 출력하므로, 모델이 히스토리 상호작용 ↔ 현재 블록을 결정적으로
         # 연결할 수 있다. target_desc('…섹션 내 블록')는 사람이 읽기 위한 섹션 보조.
-        ref = getattr(a, "ref", "") or ""
+        ref = _interaction_ref(i)
         parts = []
         if ref:
             parts.append(f"[{ref}]")
-        if a.target_desc:
-            parts.append(a.target_desc)
+        if i.target_desc:
+            parts.append(i.target_desc)
         desc = " ".join(parts) or ref
-        lines.append(f"  #{i + 1} [{a.action}] {desc} → {status}")
-        if a.summary:
-            lines.append(f"      · 의도: {a.summary}")
-        content = _action_content(a)
+        lines.append(f"  #{idx + 1} [{_interaction_op(i)}] {desc} → {status}")
+        if i.summary:
+            lines.append(f"      · 의도: {i.summary}")
+        content = _interaction_content(i)
         if content:
             lines.append(f"      · 내용: {content}")
     return "\n".join(lines)
@@ -94,16 +108,16 @@ def _format_assistant(m: BaseChatMessage) -> str:
     # 질문 본문만 남기고, 사용자가 고른 값은 다음 user 턴 content 로 들어온다.
     header = f"[ASSISTANT · {_assistant_label(m)}]"
     out = f"{header} {m.content or ''}".rstrip()
-    if isinstance(m, InteractionChatMessage) and m.actions:
-        out += "\n\n[제시된 문서 액션]\n" + _render_actions(m.actions)
+    if isinstance(m, InteractionChatMessage) and m.interactions:
+        out += "\n\n[제시된 문서 액션]\n" + _render_interactions(m.interactions)
     return out
 
 
 def _format_user(m: BaseChatMessage) -> str:
     # 선택지를 고른 경우(OptionReply)도 고른 값(content)만 그대로 싣는다.
     out = f"[USER] {m.content or ''}".rstrip()
-    if isinstance(m, InteractionChatMessage) and m.actions:
-        out += "\n\n[사용자 조치]\n" + _render_actions(m.actions)
+    if isinstance(m, InteractionChatMessage) and m.interactions:
+        out += "\n\n[사용자 조치]\n" + _render_interactions(m.interactions)
     return out
 
 
@@ -135,49 +149,29 @@ def _resolve(document: Document, ref: str):
     return sec, block, f"'{sec.meta.title}' 섹션 내 블록"
 
 
-def _edits_to_actions(document: Document, edits_map: dict) -> list[InteractionAction]:
-    actions: list[InteractionAction] = []
+def _edits_to_interactions(document: Document, edits_map: dict[str, list[BlockEdit]]) -> list[Interaction]:
+    """정규 `BlockEdit`(Block 보유) 을 wire `BlockInteraction` 으로 감싼다.
+
+    edit 페이로드는 이미 조립돼 있으므로 여기서는 ref/사람용 설명(target_desc)만 붙인다.
+    """
+    out: list[Interaction] = []
     for ref, edits in edits_map.items():
-        _sec, orig, desc = _resolve(document, ref)
+        _sec, _orig, desc = _resolve(document, ref)
         for e in edits:
-            if isinstance(e, RewriteEdit):
-                # 같은 블록을 재작성 → 원본 id/타입/format 을 유지.
-                block = make_block(
-                    orig.type if orig else "text", e.value, id=ref,
-                    format=orig.format if orig else None,
-                )
-                actions.append(RewriteBlockAction(
-                    ref=ref, block=block, summary=e.summary, target_desc=desc))
-            elif isinstance(e, ReplaceEdit):
-                actions.append(ReplaceBlockAction(
-                    ref=ref, source=e.source, target=e.target,
-                    summary=e.summary, target_desc=desc))
-            elif isinstance(e, InsertEdit):
-                actions.append(InsertBlockAction(
-                    ref=ref, block=e.value, summary=e.summary, target_desc=desc))
-    return actions
+            out.append(BlockInteraction(
+                ref=ref, edit=e, summary=e.summary, target_desc=desc))
+    return out
 
 
-def _outline_to_actions(document: Document, outline_actions: list) -> list[InteractionAction]:
-    out: list[InteractionAction] = []
-    for oa in outline_actions:
-        ref = oa.target
-        desc = ""
-        if ref and ref in document.sections:
-            desc = f"'{document.sections[ref].meta.title}' 섹션"
-        if oa.action == "ADD":
-            out.append(AddOutlineAction(
-                ref=oa.target, title=oa.title or "", level=oa.level,
-                position=oa.position, target_desc=desc))
-        elif oa.action == "MERGE":
-            targets = oa.targets or []
-            out.append(MergeOutlineAction(
-                ref=targets[0] if targets else None, targets=targets,
-                title=oa.title, level=oa.level, target_desc=desc))
-        elif oa.action == "RENAME":
-            out.append(RenameOutlineAction(ref=oa.target, title=oa.title or "", target_desc=desc))
-        elif oa.action == "REMOVE":
-            out.append(RemoveOutlineAction(ref=oa.target, target_desc=desc))
+def _outline_to_interactions(
+    document: Document, outline_edits: list[OutlineEdit]
+) -> list[Interaction]:
+    """outline edit(`OutlineEdit`) 을 wire `OutlineInteraction` 으로 감싼다."""
+    out: list[Interaction] = []
+    for oe in outline_edits:
+        ref = _outline_ref(oe)
+        desc = f"'{document.sections[ref].meta.title}' 섹션" if ref and ref in document.sections else ""
+        out.append(OutlineInteraction(outline=oe, target_desc=desc))
     return out
 
 
@@ -186,20 +180,20 @@ def assemble_message(
     content: str,
     document: Document,
     edits_map: dict | None = None,
-    outline_actions: list | None = None,
+    outline_edits: list | None = None,
     clarify_options: list[str] | None = None,
 ) -> ChatMessage:
     """에이전트 FinalOutput → wire 응답 메시지 (assistant).
 
     페이로드에 따라 메시지 타입을 고른다 (type 이 곧 행위 구분, 별도 intent 없음):
-      - 문서 액션 있음 → InteractionChatMessage (edit/restructure)
-      - 선택지 있음     → ClarifyChatMessage
-      - 그 외           → BaseChatMessage (answer)
+      - 문서 상호작용 있음 → InteractionChatMessage (edit/restructure)
+      - 선택지 있음        → ClarifyChatMessage
+      - 그 외              → BaseChatMessage (answer)
     """
-    actions = _edits_to_actions(document, edits_map or {})
-    actions += _outline_to_actions(document, outline_actions or [])
-    if actions:
-        return InteractionChatMessage(role="assistant", content=content, actions=actions)
+    interactions = _edits_to_interactions(document, edits_map or {})
+    interactions += _outline_to_interactions(document, outline_edits or [])
+    if interactions:
+        return InteractionChatMessage(role="assistant", content=content, interactions=interactions)
     if clarify_options:
         return ClarifyChatMessage(role="assistant", content=content, clarify_options=clarify_options)
     return BaseChatMessage(role="assistant", content=content)

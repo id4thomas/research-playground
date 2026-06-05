@@ -1,10 +1,10 @@
 """Domain data models.
 
-문서 트리(`document`), 블록 수준 편집(`edit`), 섹션 트리 액션(`outline`), 그리고
+문서 트리(`document`), 문서 편집 페이로드(`edit` — 블록/outline 수준), 그리고
 프론트엔드와 주고받는 chat wire 스펙(`chat`)으로 나뉜다. 호출 측은 이 패키지에서
 평탄하게 임포트하면 된다.
 
-    from core.data import Document, Edit, OutlineAction
+    from core.data import Document, BlockEdit, OutlineEdit
     from core.data import ChatMessage, InteractionChatMessage  # wire
 """
 from .document import (
@@ -18,20 +18,30 @@ from .document import (
     make_block,
     new_block_id,
 )
-from .edit import Edit, InsertEdit, LLMEdit, ReplaceEdit, RewriteEdit
-from .outline import OutlineAction
+from .edit import (
+    AddOutlineEdit,
+    BlockEdit,
+    InsertBlockEdit,
+    MergeOutlineEdit,
+    OutlineEdit,
+    RemoveOutlineEdit,
+    RenameOutlineEdit,
+    ReplaceBlockEdit,
+    RewriteBlockEdit,
+)
 from .chat import (
     BaseChatMessage,
+    BaseInteraction,
+    BlockInteraction,
     ChatMessage,
     ChatMessageAdapter,
     ClarifyChatMessage,
-    InteractionAction,
-    InteractionActionAdapter,
+    Interaction,
+    InteractionAdapter,
     InteractionChatMessage,
     OptionReplyChatMessage,
+    OutlineInteraction,
 )
-from .chat import BlockAction as WireBlockAction
-from .chat import OutlineAction as WireOutlineAction
 
 __all__ = [
     # document
@@ -44,23 +54,27 @@ __all__ = [
     "SectionMeta",
     "Section",
     "Document",
-    # edit (LLM-facing internal)
-    "LLMEdit",
-    "RewriteEdit",
-    "ReplaceEdit",
-    "InsertEdit",
-    "Edit",
-    # outline (LLM-facing internal)
-    "OutlineAction",
+    # edit (정규 블록 edit 페이로드)
+    "RewriteBlockEdit",
+    "ReplaceBlockEdit",
+    "InsertBlockEdit",
+    "BlockEdit",
+    # outline edit (섹션 트리 변경)
+    "RenameOutlineEdit",
+    "AddOutlineEdit",
+    "RemoveOutlineEdit",
+    "MergeOutlineEdit",
+    "OutlineEdit",
     # chat (wire: 프론트엔드 ↔ 서버)
     "ChatMessage",
     "BaseChatMessage",
     "InteractionChatMessage",
     "ClarifyChatMessage",
     "OptionReplyChatMessage",
-    "InteractionAction",
-    "WireBlockAction",
-    "WireOutlineAction",
+    "BaseInteraction",
+    "BlockInteraction",
+    "OutlineInteraction",
+    "Interaction",
     "ChatMessageAdapter",
-    "InteractionActionAdapter",
+    "InteractionAdapter",
 ]

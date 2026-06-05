@@ -11,14 +11,9 @@ from agent.operations.context_collect import (
     ContextCollectOperation,
     ContextCollectOutput,
 )
-from agent.operations.edit_assemble import (
-    EditAssembleOperation,
-    enforce_action_rules_map,
-    llm_edit_to_api,
-)
-from agent.operations.edit_generate import (
-    EditGenerateOperation,
-    EditGenerateOutput,
+from agent.operations.block_edit_generate import (
+    BlockEditGenerateOperation,
+    BlockEditGenerateOutput,
     render_document,
 )
 from agent.operations.intent_classify import (
@@ -26,9 +21,9 @@ from agent.operations.intent_classify import (
     IntentClassifyOperation,
     IntentClassifyOutput,
 )
-from agent.operations.restructure_generate import (
-    RestructureGenerateOperation,
-    RestructureGenerateOutput,
+from agent.operations.outline_edit_generate import (
+    OutlineEditGenerateOperation,
+    OutlineEditGenerateOutput,
 )
 from agent.operations.strip_codes import StripCodesOperation
 
@@ -39,16 +34,13 @@ __all__ = [
     "ClarifyGenerateOutput",
     "ContextCollectOperation",
     "ContextCollectOutput",
-    "EditAssembleOperation",
-    "enforce_action_rules_map",
-    "llm_edit_to_api",
-    "EditGenerateOperation",
-    "EditGenerateOutput",
+    "BlockEditGenerateOperation",
+    "BlockEditGenerateOutput",
     "render_document",
     "INTENTS",
     "IntentClassifyOperation",
     "IntentClassifyOutput",
-    "RestructureGenerateOperation",
-    "RestructureGenerateOutput",
+    "OutlineEditGenerateOperation",
+    "OutlineEditGenerateOutput",
     "StripCodesOperation",
 ]

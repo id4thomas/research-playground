@@ -1,16 +1,16 @@
-"""Restructure generation operation — outline-level (section tree) actions."""
+"""Outline edit generation operation — outline-level (section tree) actions."""
 from pydantic import BaseModel, Field
 
 from agent.base import BaseLLMOperation, ChatMessage, format_history
-from core.data import Document, OutlineAction
+from core.data import Document, OutlineEdit
 from core.langchain.usage import TokenUsage
 from core.logger import get_logger
 
 logger = get_logger(__name__)
 
 
-class RestructureGenerateOutput(BaseModel):
-    actions: list[OutlineAction] = Field(default_factory=list)
+class OutlineEditGenerateOutput(BaseModel):
+    edits: list[OutlineEdit] = Field(default_factory=list)
     message: str | None = None
     token_usage: TokenUsage = Field(default_factory=TokenUsage)
 
@@ -22,7 +22,7 @@ class _LLMOut(BaseModel):
             "'S1', 'S1-2' 같은 내부 코드를 노출하지 말고 섹션 제목으로 지칭."
         )
     )
-    outline_actions: list[OutlineAction] = Field(default_factory=list)
+    outline_actions: list[OutlineEdit] = Field(default_factory=list)
 
 
 def _render_outline(document: Document) -> str:
@@ -32,7 +32,7 @@ def _render_outline(document: Document) -> str:
     )
 
 
-class RestructureGenerateOperation(BaseLLMOperation):
+class OutlineEditGenerateOperation(BaseLLMOperation):
     PROMPT_NAME = "restructure"
 
     @classmethod
@@ -41,7 +41,7 @@ class RestructureGenerateOperation(BaseLLMOperation):
         instruction: str,
         document: Document,
         history: list[ChatMessage] | None = None,
-    ) -> RestructureGenerateOutput:
+    ) -> OutlineEditGenerateOutput:
         """Propose outline-level (section tree) actions.
 
         Args:
@@ -69,9 +69,9 @@ class RestructureGenerateOperation(BaseLLMOperation):
             result = _LLMOut.model_validate_json(msg.content)
             usage = cls.parse_token_usage(msg)
         except Exception as e:
-            logger.warning("[restructure_generate] structured output failed: %s", e)
-            return RestructureGenerateOutput(
-                actions=[],
+            logger.warning("[outline_edit_generate] structured output failed: %s", e)
+            return OutlineEditGenerateOutput(
+                edits=[],
                 message=(
                     "섹션 구조 변경 요청을 해석하지 못했습니다. 어떤 섹션을 어떻게 바꾸고 싶은지 "
                     "조금 더 구체적으로 알려주세요."
@@ -79,11 +79,11 @@ class RestructureGenerateOperation(BaseLLMOperation):
             )
 
         logger.info(
-            "[restructure_generate] %d action(s): %s usage=%s",
+            "[outline_edit_generate] %d action(s): %s usage=%s",
             len(result.outline_actions),
             [a.action for a in result.outline_actions],
             usage.model_dump(),
         )
-        return RestructureGenerateOutput(
-            actions=result.outline_actions, message=result.message, token_usage=usage
+        return OutlineEditGenerateOutput(
+            edits=result.outline_actions, message=result.message, token_usage=usage
         )

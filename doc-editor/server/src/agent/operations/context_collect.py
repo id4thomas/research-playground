@@ -12,6 +12,9 @@ from core.logger import get_logger
 
 logger = get_logger(__name__)
 
+# 후속 노드 토큰 사용량을 제한하기 위한 상한 (prompt/schema 의 maxItems 와 일치).
+MAX_SECTION_CODES = 20
+
 
 class ContextCollectOutput(BaseModel):
     section_codes: list[str] = Field(default_factory=list)
@@ -85,6 +88,12 @@ class ContextCollectOperation(BaseLLMOperation):
             return ContextCollectOutput(section_codes=fallback, reasoning="fallback")
 
         valid = [c for c in result.section_codes if c in document.sections]
+        if len(valid) > MAX_SECTION_CODES:
+            logger.warning(
+                "[context_collect] %d sections > cap %d — truncating",
+                len(valid), MAX_SECTION_CODES,
+            )
+            valid = valid[:MAX_SECTION_CODES]
         if selected:
             # selected 는 블록 UUID 목록 → 소속 섹션을 강제 포함.
             for ref in selected:
