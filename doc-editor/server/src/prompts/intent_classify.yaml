@@ -48,6 +48,19 @@ messages:
       ✅ 권장 예시:
         - "'종래 기술' 섹션의 내용을 더 구체화합니다."
 
+      ★★★ 출력 형식 (JSON) ★★★
+      최상위는 `intent`(edit|restructure|clarify|answer, 필수), `target_sections`(섹션 코드 배열),
+      `suggest_new_session`(bool), `suggest_new_session_reason`(문자열 또는 null) 를 가진 객체입니다.
+      코드블록 없이 순수 JSON만 반환합니다.
+
+      예시 (형식 참고용 — 값은 실제 요청에 맞게 채우세요):
+      {
+        "intent": "edit",
+        "target_sections": ["S1-2"],
+        "suggest_new_session": false,
+        "suggest_new_session_reason": null
+      }
+
       ## 문서 Outline
       {{ outline_text }}
 
