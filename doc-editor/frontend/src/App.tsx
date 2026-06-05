@@ -4,10 +4,11 @@ import { Editor } from "./components/Editor";
 import { ChatPanel } from "./components/ChatPanel";
 import { Resizer } from "./components/Resizer";
 import type { DocumentT, EditEntry, Intent, OutlineEntry, TokenUsage } from "./types";
+import { deriveIntent } from "./types";
 import * as api from "./lib/api";
-import { applyEditWithAnchors, initAnchors, type Anchors } from "./lib/edits";
+import { applyEdit } from "./lib/edits";
 import { applyOutlineAction } from "./lib/outline";
-import { serializeMessages } from "./lib/messages";
+import { serializeMessages, interactionsToEntries } from "./lib/messages";
 import type { TraceEntry } from "./components/DebugModal";
 
 export type MsgWithIntent = {
@@ -33,7 +34,6 @@ export default function App() {
 
   const [messages, setMessages] = useState<MsgWithIntent[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [editAnchors, setEditAnchors] = useState<Anchors>({});
   // 백엔드가 새 대화 추천을 보냈을 때 보관. pending entry가 모두 해소되면 노출.
   const [pendingSessionReason, setPendingSessionReason] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -52,7 +52,6 @@ export default function App() {
       setDocId(newDocId);
       setMessages([]);
       setSelected(new Set());
-      setEditAnchors({});
       setPendingSessionReason(null);
     } catch (e) {
       alert(`업로드 실패: ${e}`);
@@ -108,27 +107,23 @@ export default function App() {
         [turnId]: { turnId, endpoint, request: args, response: res, ts: Date.now(), durationMs },
       }));
 
-      const editEntries: EditEntry[] = [];
-      for (const [ref, edits] of Object.entries(res.edits ?? {})) {
-        for (const edit of edits) editEntries.push({ ref, edit, status: "pending" });
-      }
-      const outlineEntries: OutlineEntry[] = (res.outline_actions ?? []).map((action) => ({
-        action,
-        status: "pending",
-      }));
+      // 응답 메시지 타입에 따라 페이로드를 꺼낸다 (interaction=interactions, clarify=options).
+      const msg = res.message;
+      const interactions = msg?.type === "interaction" ? msg.interactions : [];
+      const clarifyOptions = msg?.type === "clarify" ? msg.clarify_options : undefined;
+      const { editEntries, outlineEntries } = interactionsToEntries(interactions);
 
       const assistantMsg: MsgWithIntent = {
         role: "assistant",
-        content: res.message?.content ?? "",
-        intent: res.intent,
-        clarifyOptions: res.clarify_options,
+        content: msg?.content ?? "",
+        intent: deriveIntent(msg),
+        clarifyOptions,
         editEntries: editEntries.length ? editEntries : undefined,
         outlineEntries: outlineEntries.length ? outlineEntries : undefined,
         turnId,
         tokenUsage: res.token_usage,
       };
       setMessages((m) => [...m, assistantMsg]);
-      setEditAnchors(initAnchors(doc));
 
       if (res.suggest_new_session) {
         setPendingSessionReason(res.suggest_new_session_reason ?? "");
@@ -165,14 +160,7 @@ export default function App() {
     const msg = messages[msgIdx];
     const entry = msg?.editEntries?.[entryIdx];
     if (!entry || entry.status !== "pending") return;
-    const { doc: nextDoc, anchors: nextAnchors } = applyEditWithAnchors(
-      doc,
-      entry.ref,
-      entry.edit,
-      editAnchors
-    );
-    setDoc(nextDoc);
-    setEditAnchors(nextAnchors);
+    setDoc(applyEdit(doc, entry.ref, entry.edit));
     updateEditEntry(msgIdx, entryIdx, "accepted");
   }
 
@@ -185,9 +173,7 @@ export default function App() {
     const msg = messages[msgIdx];
     const entry = msg?.outlineEntries?.[entryIdx];
     if (!entry || entry.status !== "pending") return;
-    const nextDoc = applyOutlineAction(doc, entry.action);
-    setDoc(nextDoc);
-    setEditAnchors(initAnchors(nextDoc));
+    setDoc(applyOutlineAction(doc, entry.action));
     updateOutlineEntry(msgIdx, entryIdx, "accepted");
   }
 
@@ -224,7 +210,6 @@ export default function App() {
 
   function onStartNewSession() {
     setMessages([]);
-    setEditAnchors({});
     setPendingSessionReason(null);
   }
 
@@ -260,39 +245,34 @@ export default function App() {
     return { context: lastInput, reasoning: cumulativeReasoning, output: cumulativeOutput };
   })();
 
-  function onDeleteBlock(sectionCode: string, idx: number) {
+  function onDeleteBlock(sectionCode: string, blockId: string) {
     if (!doc) return;
     const section = doc.sections[sectionCode];
     if (!section) return;
-    const blocks = section.blocks.filter((_, i) => i !== idx);
-    const nextDoc = {
+    const blocks = { ...section.blocks };
+    delete blocks[blockId];
+    const order = section.order.filter((id) => id !== blockId);
+    setDoc({
       ...doc,
-      sections: { ...doc.sections, [sectionCode]: { ...section, blocks } },
-    };
-    setDoc(nextDoc);
-    const ref = `${sectionCode};${idx}`;
-    if (selected.has(ref)) {
+      sections: { ...doc.sections, [sectionCode]: { ...section, blocks, order } },
+    });
+    if (selected.has(blockId)) {
       setSelected((s) => {
         const n = new Set(s);
-        n.delete(ref);
+        n.delete(blockId);
         return n;
       });
     }
-    setEditAnchors(initAnchors(nextDoc));
   }
 
-  function onEditBlock(sectionCode: string, idx: number, value: string) {
+  function onEditBlock(sectionCode: string, blockId: string, value: string) {
     if (!doc) return;
     const section = doc.sections[sectionCode];
-    if (!section) return;
-    const blocks = [...section.blocks];
-    blocks[idx] = { ...blocks[idx], content: value };
+    if (!section || !section.blocks[blockId]) return;
+    const blocks = { ...section.blocks, [blockId]: { ...section.blocks[blockId], content: value } };
     setDoc({
       ...doc,
-      sections: {
-        ...doc.sections,
-        [sectionCode]: { ...section, blocks },
-      },
+      sections: { ...doc.sections, [sectionCode]: { ...section, blocks } },
     });
   }
 

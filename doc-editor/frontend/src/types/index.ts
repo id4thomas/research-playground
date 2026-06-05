@@ -1,7 +1,17 @@
-// ---------- Document types (dynamic sections, S1/S1-1/... codes) ----------
+// ---------- Document types (UUID 기반 블록) ----------
 
 export type BlockType = "text" | "equation" | "table";
-export type Block = { type: BlockType; content: string };
+// 콘텐츠 표현 포맷. 허용값은 타입마다 다르다: text/table=markdown|html, equation=tex|html.
+export type BlockFormat = "markdown" | "html" | "tex";
+// 블록은 안정적인 UUID(`id`)로 식별된다. 편집/삽입/삭제가 누적돼도 id는 불변.
+export type Block = { id: string; type: BlockType; content: string; format: BlockFormat };
+
+/** 블록 타입별 기본 format (서버 _DEFAULT_FORMAT 과 일치). */
+export const DEFAULT_FORMAT: Record<BlockType, BlockFormat> = {
+  text: "markdown",
+  table: "html",
+  equation: "tex",
+};
 
 export type SectionMeta = {
   code: string;   // "S1", "S1-1", "S2-1-1"
@@ -10,9 +20,11 @@ export type SectionMeta = {
   children: string[];
 };
 
+// 블록을 id로 보관(`blocks`)하고 표시 순서는 `order`로 분리한다 (서버 Section과 동일).
 export type Section = {
   meta: SectionMeta;
-  blocks: Block[];
+  blocks: Record<string, Block>;
+  order: string[];
 };
 
 export type DocumentT = {
@@ -33,33 +45,70 @@ export type ItemStatus = "pending" | "accepted" | "declined" | "instructed";
 
 export type TokenUsage = { input: number; output: number; reasoning: number };
 
-export type EditProposalMeta = {
+// ---------- Wire 메시지 스펙 (서버 core/data/chat.py 와 1:1) ----------
+//
+// 한 "상호작용"(Interaction) = 상호작용 메타(status/summary/target_desc) +
+// 재사용된 도메인 편집 페이로드(`edit: BlockEdit` 또는 `outline: OutlineEdit`).
+// op 종류 디스크리미네이터(`action`)는 그 페이로드 안에만 존재한다.
+
+type InteractionBase = {
+  status?: ItemStatus;
+  summary?: string;
+  target_desc?: string;
+  instruction?: string | null;
+};
+
+// 블록 본문 수정: ref(대상 블록 UUID) + edit 페이로드.
+export type BlockInteraction = InteractionBase & {
+  scope: "block";
   ref: string;
-  action: "REWRITE" | "REPLACE" | "INSERT";
-  target_desc?: string;
-  summary?: string;
-  content?: string;
-  status?: ItemStatus;
-  instruction?: string | null;
+  edit: BlockEditWire;
 };
-
-export type OutlineProposalMeta = {
-  action: "RENAME" | "ADD" | "REMOVE" | "MERGE";
-  target_desc?: string;
-  summary?: string;
-  status?: ItemStatus;
-  instruction?: string | null;
+// 섹션 구조 변경: outline 페이로드(대상 섹션 code 포함).
+export type OutlineInteraction = InteractionBase & {
+  scope: "outline";
+  outline: OutlineEditWire;
 };
+export type Interaction = BlockInteraction | OutlineInteraction;
 
-export type ChatMessage = {
+// 도메인 편집 페이로드 (서버 core/data/edit.py 와 1:1). REWRITE/INSERT 는 조립된 Block 보유.
+export type BlockEditWire =
+  | { action: "REWRITE"; block: Block; summary?: string }
+  | { action: "REPLACE"; source: string; target: string; summary?: string }
+  | { action: "INSERT"; block: Block; summary?: string };
+export type OutlineEditWire =
+  | { action: "RENAME"; target: string; title?: string }
+  | { action: "ADD"; target: string | null; title?: string; level?: number | null; position?: number | null }
+  | { action: "REMOVE"; target: string }
+  | { action: "MERGE"; targets: string[]; title?: string | null; level?: number | null };
+
+// wire 메시지는 type 으로만 구분한다 (별도 intent 필드 없음).
+export type BaseChatMessage = {
+  type: "base";
   role: "user" | "assistant" | "system";
   content: string;
-  intent?: Intent | null;
-  clarify_options?: string[] | null;
-  edit_proposals?: EditProposalMeta[] | null;
-  outline_proposals?: OutlineProposalMeta[] | null;
-  picked_option_index?: number | null;
 };
+export type InteractionChatMessage = Omit<BaseChatMessage, "type"> & {
+  type: "interaction";
+  interactions: Interaction[];
+};
+// assistant 가 선택지를 제시하는 메시지.
+export type ClarifyChatMessage = Omit<BaseChatMessage, "type"> & {
+  type: "clarify";
+  clarify_options: string[];
+};
+// user 가 직전 clarify 선택지 중 하나를 고른 메시지.
+export type OptionReplyChatMessage = Omit<BaseChatMessage, "type"> & {
+  type: "option_reply";
+  picked_option_index: number;
+};
+export type ChatMessage =
+  | BaseChatMessage
+  | InteractionChatMessage
+  | ClarifyChatMessage
+  | OptionReplyChatMessage;
+
+// ---------- 내부 편집 모델 (컴포넌트에서 사용) ----------
 
 export type RewriteEdit = { action: "REWRITE"; value: string; summary?: string };
 export type ReplaceEdit = { action: "REPLACE"; source: string; target: string; summary?: string };
@@ -69,6 +118,7 @@ export type Edit = RewriteEdit | ReplaceEdit | InsertEdit;
 export type EditsMap = Record<string, Edit[]>;
 export type EditItem = { ref: string; edit: Edit };
 
+// 내부에서 다루기 쉬운 outline 표현 (target/targets 기반). wire 와는 messages.ts 에서 변환.
 export type OutlineAction =
   | { action: "RENAME"; target: string; title: string }
   | { action: "ADD"; target: string | null; title: string; level?: number | null; position?: number | null }
@@ -76,7 +126,7 @@ export type OutlineAction =
   | { action: "MERGE"; targets: string[]; title?: string | null; level?: number | null };
 
 export type EditEntry = {
-  ref: string;
+  ref: string;            // 대상 블록 UUID (INSERT 는 앵커 블록 UUID)
   edit: Edit;
   status: ItemStatus;
   instruction?: string;
@@ -89,28 +139,46 @@ export type OutlineEntry = {
 
 export type ChatResponse = {
   message: ChatMessage;
-  edits: EditsMap;
-  outline_actions?: OutlineAction[];
-  intent?: Intent;
   suggest_new_session?: boolean;
   suggest_new_session_reason?: string | null;
-  clarify_options?: string[];
   token_usage?: TokenUsage;
 };
 
-// ---------- Helpers ----------
-
-export function parseRef(ref: string): { sectionCode: string; idx: number } | null {
-  const semi = ref.lastIndexOf(";");
-  if (semi === -1) return null;
-  const sectionCode = ref.slice(0, semi);
-  const idx = parseInt(ref.slice(semi + 1), 10);
-  if (Number.isNaN(idx)) return null;
-  return { sectionCode, idx };
+/** 응답/표시용 intent 를 메시지에서 파생한다 (wire 엔 intent 필드가 없음). */
+export function deriveIntent(msg: ChatMessage | undefined): Intent {
+  if (!msg) return "";
+  if (msg.type === "clarify") return "clarify";
+  if (msg.type === "interaction") {
+    return msg.interactions.some((i) => i.scope === "outline") ? "restructure" : "edit";
+  }
+  return msg.role === "assistant" ? "answer" : "";
 }
 
-export function makeRef(sectionCode: string, idx: number): string {
-  return `${sectionCode};${idx}`;
+// ---------- Helpers ----------
+
+/** 블록 UUID 생성 (서버 hex 형식과 맞춤). */
+export function genId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID().replace(/-/g, "");
+  }
+  return Math.random().toString(16).slice(2) + Date.now().toString(16);
+}
+
+/** 블록 UUID 로 (섹션 코드, 섹션, order 내 위치) 를 찾는다. */
+export function findBlock(
+  doc: DocumentT,
+  id: string
+): { code: string; section: Section; index: number } | null {
+  for (const [code, section] of Object.entries(doc.sections)) {
+    const index = section.order.indexOf(id);
+    if (index !== -1) return { code, section, index };
+  }
+  return null;
+}
+
+/** 표시 순서대로 블록을 반환. */
+export function orderedBlocks(section: Section): Block[] {
+  return section.order.map((id) => section.blocks[id]).filter(Boolean);
 }
 
 export function flattenEdits(map: EditsMap): EditItem[] {

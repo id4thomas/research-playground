@@ -17,6 +17,21 @@ messages:
       - 미사용 필드는 null. 코드블록 없이 순수 JSON.
       - 액션 불필요 시 outline_actions 빈 배열.
 
+      ★★★ 출력 형식 (JSON) ★★★
+      최상위는 `message`(문자열)와 `outline_actions`(배열) 를 가진 객체입니다. 각 원소는
+      `action` 에 따라 필요한 필드만 채웁니다 (나머지는 null).
+
+      예시 (형식 참고용):
+      {
+        "message": "'서론' 아래에 '관련 연구' 섹션을 추가하고, 중복된 두 섹션을 합쳤습니다.",
+        "outline_actions": [
+          {"action": "RENAME", "target": "S1", "title": "서론", "targets": null, "level": null, "position": null},
+          {"action": "ADD", "target": "S1", "title": "관련 연구", "level": 2, "position": 0, "targets": null},
+          {"action": "REMOVE", "target": "S4", "title": null, "targets": null, "level": null, "position": null},
+          {"action": "MERGE", "targets": ["S2", "S3"], "title": null, "level": null, "target": null, "position": null}
+        ]
+      }
+
       ★★★ message(사용자에게 보여줄 응답) 작성 규칙 ★★★
       절대로 'S1', 'S1-1', 'S2-1-1' 같은 내부 코드를 포함하지 마세요. 괄호로 묶어도 안 됩니다.
       오직 섹션의 한국어 제목만 사용하세요.

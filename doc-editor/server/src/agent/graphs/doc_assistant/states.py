@@ -10,17 +10,17 @@ from agent.operations import (
     AnswerGenerateOutput,
     ClarifyGenerateOutput,
     ContextCollectOutput,
-    EditGenerateOutput,
+    BlockEditGenerateOutput,
     IntentClassifyOutput,
-    RestructureGenerateOutput,
+    OutlineEditGenerateOutput,
 )
-from core.data import Document, Edit, OutlineAction
+from core.data import BlockEdit, Document, OutlineEdit
 
 
 class FinalOutput(BaseModel):
     message: str = ""
-    edits: dict[str, list[Edit]] = Field(default_factory=dict)
-    outline_actions: list[OutlineAction] = Field(default_factory=list)
+    edits: dict[str, list[BlockEdit]] = Field(default_factory=dict)
+    outline_edits: list[OutlineEdit] = Field(default_factory=list)
     clarify_options: list[str] = Field(default_factory=list)
 
 
@@ -31,8 +31,8 @@ class AgentState(TypedDict, total=False):
 
     intent_router: IntentClassifyOutput
     context: ContextCollectOutput
-    edit: EditGenerateOutput
-    restructure: RestructureGenerateOutput
+    edit: BlockEditGenerateOutput
+    restructure: OutlineEditGenerateOutput
     answer: AnswerGenerateOutput
     clarify: ClarifyGenerateOutput
     final: FinalOutput

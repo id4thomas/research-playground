@@ -1,19 +1,21 @@
-import type { DocumentT, OutlineAction, Section, SectionMeta } from "../types";
+import type { Block, DocumentT, OutlineAction, Section, SectionMeta } from "../types";
+
+// 섹션 본문(블록 dict + 순서)을 outline 변형 동안 통째로 들고 다닌다.
+type Body = { blocks: Record<string, Block>; order: string[] };
+type Flat = { meta: SectionMeta; body: Body };
+
+const emptyBody = (): Body => ({ blocks: {}, order: [] });
 
 /**
- * Recompute S-codes for the outline based on each section's level.
- * Rebuilds the sections dict keyed by new codes and returns a fresh Document.
- * Sections must be in display order (flat list); levels define hierarchy.
+ * 각 섹션의 level 을 기준으로 S-코드를 다시 매기고, 그 코드를 키로 sections dict 를
+ * 재구성한 새 Document 를 반환한다. flatSections 는 표시 순서(평탄 리스트).
  */
-function recomputeCodes(
-  flatSections: { meta: SectionMeta; blocks: Section["blocks"] }[]
-): DocumentT {
+function recomputeCodes(flat: Flat[]): DocumentT {
   const counters: number[] = [];
   const newOutline: SectionMeta[] = [];
   const newSections: Record<string, Section> = {};
 
-  // First pass: assign codes
-  const codes: string[] = flatSections.map(({ meta }) => {
+  const codes: string[] = flat.map(({ meta }) => {
     const level = meta.level;
     if (level > counters.length) {
       while (counters.length < level) counters.push(0);
@@ -24,54 +26,46 @@ function recomputeCodes(
     return "S" + counters.slice(0, level).join("-");
   });
 
-  // Second pass: build outline & section dict (children populated via lookahead)
-  for (let i = 0; i < flatSections.length; i++) {
-    const { meta, blocks } = flatSections[i];
+  for (let i = 0; i < flat.length; i++) {
+    const { meta, body } = flat[i];
     const code = codes[i];
     const children: string[] = [];
-    for (let j = i + 1; j < flatSections.length; j++) {
-      if (flatSections[j].meta.level === meta.level + 1) {
+    for (let j = i + 1; j < flat.length; j++) {
+      if (flat[j].meta.level === meta.level + 1) {
         children.push(codes[j]);
-      } else if (flatSections[j].meta.level <= meta.level) {
+      } else if (flat[j].meta.level <= meta.level) {
         break;
       }
     }
     const newMeta: SectionMeta = { ...meta, code, children };
     newOutline.push(newMeta);
-    newSections[code] = { meta: newMeta, blocks };
+    newSections[code] = { meta: newMeta, blocks: body.blocks, order: body.order };
   }
 
   return { sections: newSections, outline: newOutline };
 }
 
-function docToFlat(doc: DocumentT): { meta: SectionMeta; blocks: Section["blocks"] }[] {
-  // outline already holds the display order
+function docToFlat(doc: DocumentT): Flat[] {
   return doc.outline.map((m) => {
     const s = doc.sections[m.code];
-    return { meta: { ...m }, blocks: s ? s.blocks : [] };
+    return { meta: { ...m }, body: s ? { blocks: s.blocks, order: s.order } : emptyBody() };
   });
 }
 
-/** Index of `target` in the flat list, or -1. */
-function indexOfCode(
-  flat: { meta: SectionMeta }[],
-  code: string
-): number {
+function indexOfCode(flat: Flat[], code: string): number {
   return flat.findIndex((s) => s.meta.code === code);
 }
 
 /** Index where a child of `parentCode` at sibling position `position` should be inserted. */
 function insertionIndex(
-  flat: { meta: SectionMeta }[],
+  flat: Flat[],
   parentCode: string | null,
   position: number | null,
   newLevel: number
 ): number {
   if (!parentCode) {
-    // Root-level insertion: among sections with level === newLevel
     const rootCount = flat.filter((s) => s.meta.level === newLevel).length;
     const pos = position === null || position === undefined ? rootCount : position;
-    // Find the n-th level==newLevel section; insert before it (or end)
     let seen = 0;
     for (let i = 0; i < flat.length; i++) {
       if (flat[i].meta.level === newLevel) {
@@ -85,35 +79,33 @@ function insertionIndex(
   const pIdx = indexOfCode(flat, parentCode);
   if (pIdx === -1) return flat.length;
   const parentLevel = flat[pIdx].meta.level;
-
-  // Walk through subtree, count direct children (level == parentLevel+1)
   const childLevel = parentLevel + 1;
   let seen = 0;
   let i = pIdx + 1;
-  let insertAt = flat.length;
-  // Default: append after entire subtree
   while (i < flat.length && flat[i].meta.level > parentLevel) {
     if (flat[i].meta.level === childLevel) {
-      if (position !== null && position !== undefined && seen === position) {
-        return i;
-      }
+      if (position !== null && position !== undefined && seen === position) return i;
       seen++;
     }
     i++;
   }
-  insertAt = i;
-  return insertAt;
+  return i;
 }
 
-/** Remove the section at `idx` and all of its descendants (deeper-level following entries). */
-function removeSubtree(
-  flat: { meta: SectionMeta; blocks: Section["blocks"] }[],
-  idx: number
-): { meta: SectionMeta; blocks: Section["blocks"] }[] {
+/** Remove the section at `idx` and all of its descendants. */
+function removeSubtree(flat: Flat[], idx: number): Flat[] {
   const level = flat[idx].meta.level;
   let end = idx + 1;
   while (end < flat.length && flat[end].meta.level > level) end++;
   return [...flat.slice(0, idx), ...flat.slice(end)];
+}
+
+/** 두 본문을 순서 보존하며 합친다. */
+function concatBody(a: Body, b: Body): Body {
+  return {
+    blocks: { ...a.blocks, ...b.blocks },
+    order: [...a.order, ...b.order],
+  };
 }
 
 /** 사용자에게 보여줄 한국어 설명. 섹션 제목으로 지칭. */
@@ -158,13 +150,8 @@ export function applyOutlineActions(doc: DocumentT, actions: OutlineAction[]): D
       const level =
         action.level ?? (parent ? (flat.find((s) => s.meta.code === parent)?.meta.level ?? 0) + 1 : 1);
       const at = insertionIndex(flat, parent, action.position ?? null, level);
-      const newMeta: SectionMeta = {
-        code: "TBD",
-        title: action.title,
-        level,
-        children: [],
-      };
-      flat = [...flat.slice(0, at), { meta: newMeta, blocks: [] }, ...flat.slice(at)];
+      const newMeta: SectionMeta = { code: "TBD", title: action.title, level, children: [] };
+      flat = [...flat.slice(0, at), { meta: newMeta, body: emptyBody() }, ...flat.slice(at)];
     } else if (action.action === "MERGE") {
       flat = applyMerge(flat, action.targets, action.title ?? null, action.level ?? null);
     }
@@ -175,16 +162,13 @@ export function applyOutlineActions(doc: DocumentT, actions: OutlineAction[]): D
 /**
  * MERGE: targets[0]이 생존하고, [targets[0], targets[last]의 subtree-end) 범위의 모든
  * 다른 섹션 블록이 순서대로 생존 섹션 뒤에 이어붙는다.
- * - targets는 outline 표시 순서상 오름차순이어야 한다 (위반 시 거부).
- * - 범위 내에 targets에 없는 섹션이 있더라도 함께 흡수된다 (LLM이 의도한 병합 범위로 간주).
- * - 부모+자식 형태(S2-1, S2-1-1, S2-1-2 …)도 정상 처리.
  */
 function applyMerge(
-  flat: { meta: SectionMeta; blocks: Section["blocks"] }[],
+  flat: Flat[],
   targets: string[],
   newTitle: string | null,
   newLevel: number | null
-): { meta: SectionMeta; blocks: Section["blocks"] }[] {
+): Flat[] {
   if (!targets || targets.length < 2) return flat;
 
   const indices = targets.map((t) => indexOfCode(flat, t));
@@ -209,24 +193,21 @@ function applyMerge(
   const survivorIdx = indices[0];
   const lastEnd = subtreeEnd(indices[indices.length - 1]);
 
-  // survivor 자체의 블록은 유지하고, 그 이후 ~ lastEnd 범위의 모든 섹션 블록을 흡수.
-  const absorbedBlocks = flat
-    .slice(survivorIdx + 1, lastEnd)
-    .flatMap((s) => s.blocks);
+  // survivor 본문 + 이후 ~ lastEnd 범위의 모든 섹션 본문을 순서대로 흡수.
+  let mergedBody = flat[survivorIdx].body;
+  for (const s of flat.slice(survivorIdx + 1, lastEnd)) {
+    mergedBody = concatBody(mergedBody, s.body);
+  }
 
   const survivor = flat[survivorIdx];
-  const mergedSection = {
+  const mergedSection: Flat = {
     meta: {
       ...survivor.meta,
       title: newTitle ?? survivor.meta.title,
       level: newLevel ?? survivor.meta.level,
-    } as SectionMeta,
-    blocks: [...survivor.blocks, ...absorbedBlocks],
+    },
+    body: mergedBody,
   };
 
-  return [
-    ...flat.slice(0, survivorIdx),
-    mergedSection,
-    ...flat.slice(lastEnd),
-  ];
+  return [...flat.slice(0, survivorIdx), mergedSection, ...flat.slice(lastEnd)];
 }

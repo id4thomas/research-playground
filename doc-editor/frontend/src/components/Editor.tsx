@@ -1,52 +1,38 @@
 import { useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import type { Block, DocumentT } from "../types";
-import { makeRef } from "../types";
+import { orderedBlocks } from "../types";
+import { BlockRender } from "./BlockView";
 
 type Props = {
   doc: DocumentT;
   selected: Set<string>;
   onToggleSelect: (ref: string) => void;
-  onEditBlock: (sectionCode: string, idx: number, value: string) => void;
-  onDeleteBlock: (sectionCode: string, idx: number) => void;
+  onEditBlock: (sectionCode: string, blockId: string, value: string) => void;
+  onDeleteBlock: (sectionCode: string, blockId: string) => void;
   jumpTarget: string | null;
 };
 
 function BlockBody({ block, onChange }: { block: Block; onChange: (v: string) => void }) {
   const [editing, setEditing] = useState(false);
   const rows = Math.max(1, Math.ceil(block.content.length / 60));
-  const base = "flex-1 resize-none outline-none leading-snug text-sm";
 
-  if (block.type === "text") {
-    if (editing) {
-      return (
-        <textarea
-          autoFocus
-          className={`${base} bg-transparent`}
-          rows={rows}
-          value={block.content}
-          onChange={(e) => onChange(e.target.value)}
-          onBlur={() => setEditing(false)}
-        />
-      );
-    }
+  if (editing) {
+    // 편집 모드: 항상 raw 소스를 textarea 로 (포맷 그대로 수정).
     return (
-      <div
-        className="flex-1 leading-snug text-sm prose-block cursor-text"
-        onClick={() => setEditing(true)}
-      >
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{block.content}</ReactMarkdown>
-      </div>
+      <textarea
+        autoFocus
+        className="flex-1 resize-none outline-none leading-snug bg-slate-50 rounded px-2 py-1 font-mono text-[12px]"
+        rows={rows}
+        value={block.content}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={() => setEditing(false)}
+      />
     );
   }
   return (
-    <textarea
-      className={`${base} bg-slate-50 rounded px-2 py-1 font-mono text-[12px]`}
-      rows={rows}
-      value={block.content}
-      onChange={(e) => onChange(e.target.value)}
-    />
+    <div className="flex-1 min-w-0 cursor-text" onClick={() => setEditing(true)} title={`${block.type}:${block.format}`}>
+      <BlockRender block={block} />
+    </div>
   );
 }
 
@@ -101,7 +87,8 @@ export function Editor({ doc, selected, onToggleSelect, onEditBlock, onDeleteBlo
         {orderedCodes.map((code) => {
           const section = doc.sections[code];
           if (!section) return null;
-          const { meta, blocks } = section;
+          const { meta } = section;
+          const blocks = orderedBlocks(section);
           const indent = (meta.level - 1) * 16;
           return (
             <section
@@ -123,13 +110,13 @@ export function Editor({ doc, selected, onToggleSelect, onEditBlock, onDeleteBlo
                 </h2>
               </div>
               <div className="space-y-1.5">
-                {blocks.map((b, i) => {
-                  const ref = makeRef(code, i);
+                {blocks.map((b) => {
+                  const ref = b.id;
                   const isSel = selected.has(ref);
                   const h = heights[ref];
                   return (
                     <div
-                      key={i}
+                      key={ref}
                       style={h ? { height: h, overflow: "auto" } : undefined}
                       className={
                         "group relative rounded border px-3 py-2 transition " +
@@ -149,13 +136,13 @@ export function Editor({ doc, selected, onToggleSelect, onEditBlock, onDeleteBlo
                           }
                           onClick={() => onToggleSelect(ref)}
                         />
-                        <BlockBody block={b} onChange={(v) => onEditBlock(code, i, v)} />
-                        <span className="text-[10px] font-mono text-slate-400 opacity-0 group-hover:opacity-100 shrink-0">
-                          {b.type !== "text" ? `${b.type} ` : ""}{ref}
+                        <BlockBody block={b} onChange={(v) => onEditBlock(code, ref, v)} />
+                        <span title={ref} className="text-[10px] font-mono text-slate-400 opacity-0 group-hover:opacity-100 shrink-0">
+                          {b.type !== "text" ? `${b.type} ` : ""}{ref.slice(0, 6)}
                         </span>
                         <button
                           title="블록 삭제"
-                          onClick={() => onDeleteBlock(code, i)}
+                          onClick={() => onDeleteBlock(code, ref)}
                           className="opacity-0 group-hover:opacity-100 shrink-0 h-5 w-5 flex items-center justify-center rounded text-red-600 hover:bg-red-100 transition"
                         >
                           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5">

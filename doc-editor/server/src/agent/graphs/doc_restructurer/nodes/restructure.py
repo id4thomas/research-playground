@@ -1,9 +1,9 @@
-"""Restructure node — wraps RestructureGenerateOperation."""
+"""Restructure node — wraps OutlineEditGenerateOperation."""
 from langchain_core.runnables import RunnableConfig
 
 from agent.base import BaseNode, split_instruction_history
 from agent.graphs.doc_restructurer.states import RestructurerState
-from agent.operations import RestructureGenerateOperation
+from agent.operations import OutlineEditGenerateOperation
 
 
 class RestructureNode(BaseNode):
@@ -11,7 +11,7 @@ class RestructureNode(BaseNode):
 
     async def run(self, state: RestructurerState, config: RunnableConfig) -> dict:
         instruction, history = split_instruction_history(state["messages"])
-        out = await RestructureGenerateOperation.run(
+        out = await OutlineEditGenerateOperation.run(
             instruction=instruction,
             document=state["document"],
             history=history,

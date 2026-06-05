@@ -16,7 +16,7 @@ class RestructureAssembleNode(BaseNode):
         message = await StripCodesOperation.run((out.message if out else "") or "", doc)
         return {
             "final": FinalOutput(
-                message=message, outline_actions=out.actions if out else []
+                message=message, outline_edits=out.edits if out else []
             )
         }
 

@@ -19,15 +19,21 @@ StateT = TypeVar("StateT", bound=dict[str, Any])
 NodeReturn = dict[str, Any] | Command
 
 
-class ChatMessage(TypedDict):
-    """A single chat turn passed to an Operation as LLM context.
+class LLMChatMessage(TypedDict):
+    """A single chat turn passed to an Operation as **LLM context**.
 
-    Plain dict (no LangChain classes) so Operations stay framework-agnostic.
-    `role` is the speaker; `content` is the text shown to the model.
+    This is the LLM-facing message spec — intentionally separate from the
+    wire spec (`core.data.chat.ChatMessage`) that the frontend exchanges.
+    Plain role/content text (no UUIDs, no structured actions): the wire history
+    is serialized down into these readable turns before reaching the model.
     """
 
     role: Literal["system", "developer", "user", "assistant"]
     content: str
+
+
+# Back-compat alias: 기존 임포트(`from agent.base import ChatMessage`)를 위해 유지.
+ChatMessage = LLMChatMessage
 
 
 _ROLE_LABELS = {"system": "시스템", "developer": "시스템", "user": "사용자", "assistant": "어시스턴트"}

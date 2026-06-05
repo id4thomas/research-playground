@@ -127,8 +127,8 @@ export function ChatPanel({
           return (
             <div key={i}>
               {m.role === "user" ? (
-                <div className="rounded-lg px-3 py-2 text-sm max-w-[90%] ml-auto bg-blue-600 text-white">
-                  {m.content}
+                <div className="rounded-lg px-3 py-2 text-sm max-w-[90%] ml-auto bg-blue-600 text-white prose-block prose-invert">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
                 </div>
               ) : (
                 <div className="mr-auto max-w-[95%] space-y-1">
