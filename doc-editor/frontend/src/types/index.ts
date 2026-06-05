@@ -46,41 +46,41 @@ export type ItemStatus = "pending" | "accepted" | "declined" | "instructed";
 export type TokenUsage = { input: number; output: number; reasoning: number };
 
 // ---------- Wire 메시지 스펙 (서버 core/data/chat.py 와 1:1) ----------
+//
+// 한 "상호작용"(Interaction) = 상호작용 메타(status/summary/target_desc) +
+// 재사용된 도메인 편집 페이로드(`edit: BlockEdit` 또는 `outline: OutlineEdit`).
+// op 종류 디스크리미네이터(`action`)는 그 페이로드 안에만 존재한다.
 
-type ActionBase = {
+type InteractionBase = {
   status?: ItemStatus;
   summary?: string;
   target_desc?: string;
   instruction?: string | null;
 };
 
-export type RewriteBlockAction = ActionBase & {
-  scope: "block"; action: "REWRITE"; ref: string; block: Block;
+// 블록 본문 수정: ref(대상 블록 UUID) + edit 페이로드.
+export type BlockInteraction = InteractionBase & {
+  scope: "block";
+  ref: string;
+  edit: BlockEditWire;
 };
-export type ReplaceBlockAction = ActionBase & {
-  scope: "block"; action: "REPLACE"; ref: string; source: string; target: string;
+// 섹션 구조 변경: outline 페이로드(대상 섹션 code 포함).
+export type OutlineInteraction = InteractionBase & {
+  scope: "outline";
+  outline: OutlineEditWire;
 };
-export type InsertBlockAction = ActionBase & {
-  scope: "block"; action: "INSERT"; ref: string; block: Block;
-};
-export type BlockAction = RewriteBlockAction | ReplaceBlockAction | InsertBlockAction;
+export type Interaction = BlockInteraction | OutlineInteraction;
 
-export type AddOutlineAction = ActionBase & {
-  scope: "outline"; action: "ADD"; ref: string | null; title: string; level?: number | null; position?: number | null;
-};
-export type MergeOutlineAction = ActionBase & {
-  scope: "outline"; action: "MERGE"; ref: string | null; targets: string[]; title?: string | null; level?: number | null;
-};
-export type RenameOutlineAction = ActionBase & {
-  scope: "outline"; action: "RENAME"; ref: string; title: string;
-};
-export type RemoveOutlineAction = ActionBase & {
-  scope: "outline"; action: "REMOVE"; ref: string;
-};
-export type OutlineActionWire =
-  | AddOutlineAction | MergeOutlineAction | RenameOutlineAction | RemoveOutlineAction;
-
-export type InteractionAction = BlockAction | OutlineActionWire;
+// 도메인 편집 페이로드 (서버 core/data/edit.py 와 1:1). REWRITE/INSERT 는 조립된 Block 보유.
+export type BlockEditWire =
+  | { action: "REWRITE"; block: Block; summary?: string }
+  | { action: "REPLACE"; source: string; target: string; summary?: string }
+  | { action: "INSERT"; block: Block; summary?: string };
+export type OutlineEditWire =
+  | { action: "RENAME"; target: string; title?: string }
+  | { action: "ADD"; target: string | null; title?: string; level?: number | null; position?: number | null }
+  | { action: "REMOVE"; target: string }
+  | { action: "MERGE"; targets: string[]; title?: string | null; level?: number | null };
 
 // wire 메시지는 type 으로만 구분한다 (별도 intent 필드 없음).
 export type BaseChatMessage = {
@@ -90,7 +90,7 @@ export type BaseChatMessage = {
 };
 export type InteractionChatMessage = Omit<BaseChatMessage, "type"> & {
   type: "interaction";
-  actions: InteractionAction[];
+  interactions: Interaction[];
 };
 // assistant 가 선택지를 제시하는 메시지.
 export type ClarifyChatMessage = Omit<BaseChatMessage, "type"> & {
@@ -149,7 +149,7 @@ export function deriveIntent(msg: ChatMessage | undefined): Intent {
   if (!msg) return "";
   if (msg.type === "clarify") return "clarify";
   if (msg.type === "interaction") {
-    return msg.actions.some((a) => a.scope === "outline") ? "restructure" : "edit";
+    return msg.interactions.some((i) => i.scope === "outline") ? "restructure" : "edit";
   }
   return msg.role === "assistant" ? "answer" : "";
 }

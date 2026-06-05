@@ -8,7 +8,7 @@ import { deriveIntent } from "./types";
 import * as api from "./lib/api";
 import { applyEdit } from "./lib/edits";
 import { applyOutlineAction } from "./lib/outline";
-import { serializeMessages, actionsToEntries } from "./lib/messages";
+import { serializeMessages, interactionsToEntries } from "./lib/messages";
 import type { TraceEntry } from "./components/DebugModal";
 
 export type MsgWithIntent = {
@@ -107,11 +107,11 @@ export default function App() {
         [turnId]: { turnId, endpoint, request: args, response: res, ts: Date.now(), durationMs },
       }));
 
-      // 응답 메시지 타입에 따라 페이로드를 꺼낸다 (interaction=actions, clarify=options).
+      // 응답 메시지 타입에 따라 페이로드를 꺼낸다 (interaction=interactions, clarify=options).
       const msg = res.message;
-      const actions = msg?.type === "interaction" ? msg.actions : [];
+      const interactions = msg?.type === "interaction" ? msg.interactions : [];
       const clarifyOptions = msg?.type === "clarify" ? msg.clarify_options : undefined;
-      const { editEntries, outlineEntries } = actionsToEntries(actions);
+      const { editEntries, outlineEntries } = interactionsToEntries(interactions);
 
       const assistantMsg: MsgWithIntent = {
         role: "assistant",

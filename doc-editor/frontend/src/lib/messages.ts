@@ -10,7 +10,7 @@ import type {
   DocumentT,
   Edit,
   EditEntry,
-  InteractionAction,
+  Interaction,
   OutlineEntry,
 } from "../types";
 import { findBlock, DEFAULT_FORMAT } from "../types";
@@ -35,7 +35,7 @@ function rewriteBlock(ref: string, value: string, doc: DocumentT): Block {
   return { id: ref, type, content: value, format: orig?.format ?? DEFAULT_FORMAT[type] };
 }
 
-function editToAction(e: EditEntry, doc: DocumentT): InteractionAction {
+function editToInteraction(e: EditEntry, doc: DocumentT): Interaction {
   const common = {
     scope: "block" as const,
     ref: e.ref,
@@ -46,38 +46,35 @@ function editToAction(e: EditEntry, doc: DocumentT): InteractionAction {
   };
   const edit: Edit = e.edit;
   if (edit.action === "REWRITE") {
-    return { ...common, action: "REWRITE", block: rewriteBlock(e.ref, edit.value, doc) };
+    return { ...common, edit: { action: "REWRITE", block: rewriteBlock(e.ref, edit.value, doc), summary: edit.summary } };
   }
   if (edit.action === "REPLACE") {
-    return { ...common, action: "REPLACE", source: edit.source, target: edit.target };
+    return { ...common, edit: { action: "REPLACE", source: edit.source, target: edit.target, summary: edit.summary } };
   }
-  return { ...common, action: "INSERT", block: edit.value };
+  return { ...common, edit: { action: "INSERT", block: edit.value, summary: edit.summary } };
 }
 
-function outlineToAction(e: OutlineEntry, doc: DocumentT): InteractionAction {
+function outlineToInteraction(e: OutlineEntry, doc: DocumentT): Interaction {
   const a = e.action;
+  const ref = a.action === "MERGE" ? (a.targets[0] ?? null) : a.target;
   const common = {
     scope: "outline" as const,
     summary: "",
     status: e.status,
     instruction: e.instruction ?? null,
+    target_desc: `'${sectionTitle(doc, ref)}' 섹션`,
   };
   if (a.action === "RENAME") {
-    return { ...common, action: "RENAME", ref: a.target, title: a.title,
-      target_desc: `'${sectionTitle(doc, a.target)}' 섹션` };
+    return { ...common, outline: { action: "RENAME", target: a.target, title: a.title } };
   }
   if (a.action === "ADD") {
-    return { ...common, action: "ADD", ref: a.target, title: a.title, level: a.level ?? null, position: a.position ?? null,
-      target_desc: `'${sectionTitle(doc, a.target)}' 섹션` };
+    return { ...common, outline: { action: "ADD", target: a.target, title: a.title, level: a.level ?? null, position: a.position ?? null } };
   }
   if (a.action === "REMOVE") {
-    return { ...common, action: "REMOVE", ref: a.target,
-      target_desc: `'${sectionTitle(doc, a.target)}' 섹션` };
+    return { ...common, outline: { action: "REMOVE", target: a.target } };
   }
   // MERGE
-  return { ...common, action: "MERGE", ref: a.targets[0] ?? null, targets: a.targets,
-    title: a.title ?? null, level: a.level ?? null,
-    target_desc: `'${sectionTitle(doc, a.targets[0])}' 섹션` };
+  return { ...common, outline: { action: "MERGE", targets: a.targets, title: a.title ?? null, level: a.level ?? null } };
 }
 
 export function serializeMessages(messages: MsgWithIntent[], doc: DocumentT): ChatMessage[] {
@@ -91,12 +88,12 @@ export function serializeMessages(messages: MsgWithIntent[], doc: DocumentT): Ch
         out.push({ type: "base", role: "user", content: m.content });
       }
     } else if (m.role === "assistant") {
-      const actions: InteractionAction[] = [
-        ...(m.outlineEntries ?? []).map((e) => outlineToAction(e, doc)),
-        ...(m.editEntries ?? []).map((e) => editToAction(e, doc)),
+      const interactions: Interaction[] = [
+        ...(m.outlineEntries ?? []).map((e) => outlineToInteraction(e, doc)),
+        ...(m.editEntries ?? []).map((e) => editToInteraction(e, doc)),
       ];
-      if (actions.length) {
-        out.push({ type: "interaction", role: "assistant", content: m.content, actions });
+      if (interactions.length) {
+        out.push({ type: "interaction", role: "assistant", content: m.content, interactions });
       } else if (m.clarifyOptions?.length) {
         out.push({ type: "clarify", role: "assistant", content: m.content, clarify_options: m.clarifyOptions });
       } else {
@@ -109,39 +106,41 @@ export function serializeMessages(messages: MsgWithIntent[], doc: DocumentT): Ch
   return out;
 }
 
-// ---------- 응답 message.actions → 내부 편집 모델 ----------
+// ---------- 응답 message.interactions → 내부 편집 모델 ----------
 
-export function actionsToEntries(actions: InteractionAction[]): {
+export function interactionsToEntries(interactions: Interaction[]): {
   editEntries: EditEntry[];
   outlineEntries: OutlineEntry[];
 } {
   const editEntries: EditEntry[] = [];
   const outlineEntries: OutlineEntry[] = [];
-  for (const a of actions) {
-    const status = a.status ?? "pending";
-    const instruction = a.instruction ?? undefined;
-    if (a.scope === "block") {
-      if (a.action === "REWRITE") {
-        editEntries.push({ ref: a.ref, status, instruction,
-          edit: { action: "REWRITE", value: a.block.content, summary: a.summary } });
-      } else if (a.action === "REPLACE") {
-        editEntries.push({ ref: a.ref, status, instruction,
-          edit: { action: "REPLACE", source: a.source, target: a.target, summary: a.summary } });
+  for (const i of interactions) {
+    const status = i.status ?? "pending";
+    const instruction = i.instruction ?? undefined;
+    if (i.scope === "block") {
+      const e = i.edit;
+      if (e.action === "REWRITE") {
+        editEntries.push({ ref: i.ref, status, instruction,
+          edit: { action: "REWRITE", value: e.block.content, summary: e.summary } });
+      } else if (e.action === "REPLACE") {
+        editEntries.push({ ref: i.ref, status, instruction,
+          edit: { action: "REPLACE", source: e.source, target: e.target, summary: e.summary } });
       } else {
-        editEntries.push({ ref: a.ref, status, instruction,
-          edit: { action: "INSERT", value: a.block, summary: a.summary } });
+        editEntries.push({ ref: i.ref, status, instruction,
+          edit: { action: "INSERT", value: e.block, summary: e.summary } });
       }
     } else {
-      if (a.action === "RENAME") {
-        outlineEntries.push({ status, instruction, action: { action: "RENAME", target: a.ref, title: a.title } });
-      } else if (a.action === "ADD") {
+      const o = i.outline;
+      if (o.action === "RENAME") {
+        outlineEntries.push({ status, instruction, action: { action: "RENAME", target: o.target, title: o.title ?? "" } });
+      } else if (o.action === "ADD") {
         outlineEntries.push({ status, instruction,
-          action: { action: "ADD", target: a.ref, title: a.title, level: a.level ?? null, position: a.position ?? null } });
-      } else if (a.action === "REMOVE") {
-        outlineEntries.push({ status, instruction, action: { action: "REMOVE", target: a.ref ?? "" } });
+          action: { action: "ADD", target: o.target, title: o.title ?? "", level: o.level ?? null, position: o.position ?? null } });
+      } else if (o.action === "REMOVE") {
+        outlineEntries.push({ status, instruction, action: { action: "REMOVE", target: o.target } });
       } else {
         outlineEntries.push({ status, instruction,
-          action: { action: "MERGE", targets: a.targets, title: a.title ?? null, level: a.level ?? null } });
+          action: { action: "MERGE", targets: o.targets, title: o.title ?? null, level: o.level ?? null } });
       }
     }
   }
