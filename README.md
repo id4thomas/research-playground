@@ -11,7 +11,7 @@ Collection of research related demos
 ## Summary
 ### doc-editor
 채팅 기반 Markdown 문서 편집 데모
-<img src="./doc-editor/assets/example.png" width="80%">
+![doc-editor-demo](./doc-editor/assets/example.png)
 
 
 ### deep-research
