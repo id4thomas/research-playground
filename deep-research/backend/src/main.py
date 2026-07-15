@@ -8,6 +8,7 @@ os.environ["DD_TRACE_AUTO_PATCH"] = "false"
 os.environ["DD_INSTRUMENTATION_TELEMETRY_ENABLED"] = "false"
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from openai import AsyncOpenAI
 
 from ddtrace import patch
@@ -44,4 +45,11 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+# 데모 페이지(정적 파일 서버)에서의 호출 허용
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.include_router(router)

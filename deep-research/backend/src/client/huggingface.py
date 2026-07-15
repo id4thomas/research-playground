@@ -108,8 +108,14 @@ class HuggingfacePapersClient:
             return response.json()
     
     async def search(self, query: str, limit: Optional[int] = None) -> list[Paper]:
-        """Search papers by keyword. Returns up to *limit* results."""
-        data = await self._get("search", params={"q": query})
+        """Search papers by keyword. Returns up to *limit* results.
+
+        API 제약: q는 최대 250자, limit은 1~120 (hybrid semantic + full-text search)
+        """
+        params = {"q": query[:250]}
+        if limit:
+            params["limit"] = max(1, min(limit, 120))
+        data = await self._get("search", params=params)
         papers = [Paper.from_dict(item) for item in data]
         return papers[:limit] if limit else papers
 
