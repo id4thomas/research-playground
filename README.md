@@ -17,4 +17,4 @@ Collection of research related demos
 ### deep-research
 Simple Deep Research implemented using LangGraph, traced with mlflow
 
-![demo](./deep-research/figs/demo_result.png)
+![demo](./deep-research/figs/v2_structured_demo.png)

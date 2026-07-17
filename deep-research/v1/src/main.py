@@ -1,10 +1,11 @@
 import json
 import logging
 
-import mlflow
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from langfuse import Langfuse
+from langfuse.langchain import CallbackHandler
 from pydantic import BaseModel
 
 from config import get_settings
@@ -15,14 +16,13 @@ from core.logger import get_logger
 settings = get_settings()
 logger = get_logger(__name__)
 
-# Init mlflow tracing
-mlflow.set_tracking_uri(settings.tracing.uri)
-mlflow.set_experiment(settings.tracing.experiment)
-mlflow.langchain.autolog()
-
-# MLflow LangChain autologging uses ContextVar tokens across async contexts
-# (e.g. LangGraph fan-out), which raises a spurious warning — suppress it.
-logging.getLogger("mlflow.utils.autologging_utils").setLevel(logging.ERROR)
+# Init langfuse tracing
+Langfuse(
+    host=settings.tracing.host,
+    public_key=settings.tracing.public_key,
+    secret_key=settings.tracing.secret_key,
+)
+langfuse_handler = CallbackHandler()
 
 app = FastAPI()
 app.add_middleware(
@@ -86,7 +86,7 @@ async def search(request: SearchRequest):
         search_limit=request.search_limit,
         min_required=request.min_required,
     )
-    result = await agent.invoke(state, config=config)
+    result = await agent.invoke(state, config=config, callbacks=[langfuse_handler])
     return {
         "query": result["query"],
         "topics": result["topics"],
@@ -122,7 +122,7 @@ async def search_stream(request: SearchRequest):
                 search_limit=request.search_limit,
                 min_required=request.min_required,
             )
-            async for event in agent.astream(state, config=config):
+            async for event in agent.astream(state, config=config, callbacks=[langfuse_handler]):
                 kind = event["event"]
                 node = event["metadata"].get("langgraph_node", "")
                 name = event["name"]

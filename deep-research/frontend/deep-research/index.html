@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deep Research</title>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --border: #e2e5ea;
+    --text: #1f2430; --muted: #6b7280; --accent: #2563eb;
+    --ok: #16a34a; --warn: #d97706; --err: #dc2626;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, "Segoe UI", Roboto, "Noto Sans KR", sans-serif;
+    font-size: 14px; line-height: 1.55;
+  }
+  .layout { display: flex; gap: 16px; padding: 16px; max-width: 1600px; margin: 0 auto; }
+  .sidebar { width: 300px; flex-shrink: 0; }
+  .main { flex: 1; min-width: 0; display: grid; grid-template-columns: 6fr 4fr; gap: 16px; align-items: start; }
+  @media (max-width: 1100px) { .main { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+  h1 { font-size: 18px; margin: 0 0 12px; }
+  h2 { font-size: 15px; margin: 0 0 10px; }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+  textarea, input[type="number"], select {
+    width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 6px;
+    font: inherit; background: var(--bg);
+  }
+  textarea { resize: vertical; }
+  details { margin-top: 12px; }
+  summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+  button {
+    width: 100%; margin-top: 14px; padding: 10px; border: 0; border-radius: 8px;
+    background: var(--accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer;
+  }
+  button:disabled { opacity: 0.5; cursor: default; }
+
+  /* progress timeline */
+  #progress { display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto; }
+  /* 사이드바에 있을 때는 작게 표시 */
+  #progress-compact #progress { max-height: 160px; font-size: 12px; }
+  #progress-compact .panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  #progress-compact .panel-head h2 { margin: 0; }
+  .expand-btn {
+    width: auto; margin: 0; padding: 2px 8px; font-size: 12px; font-weight: 500;
+    background: var(--bg); color: var(--muted); border: 1px solid var(--border); border-radius: 6px;
+  }
+  .expand-btn:hover { color: var(--text); }
+
+  /* progress modal */
+  #progress-modal {
+    display: none; position: fixed; inset: 0; z-index: 100;
+    background: rgba(31, 36, 48, 0.45); align-items: center; justify-content: center; padding: 24px;
+  }
+  #progress-modal.open { display: flex; }
+  #progress-modal .modal-box {
+    background: var(--panel); border-radius: 12px; padding: 20px;
+    width: min(720px, 100%); max-height: 85vh; display: flex; flex-direction: column;
+  }
+  #progress-modal .modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  #progress-modal .modal-head h2 { margin: 0; }
+  #progress-modal .modal-body { overflow-y: auto; min-height: 0; }
+  #progress-modal .modal-body #progress { max-height: none; font-size: 13px; }
+  .close-btn {
+    width: auto; margin: 0; padding: 2px 10px; font-size: 13px; font-weight: 500;
+    background: var(--bg); color: var(--muted); border: 1px solid var(--border); border-radius: 6px;
+  }
+  .close-btn:hover { color: var(--text); }
+  .event { display: flex; gap: 8px; align-items: baseline; padding: 6px 8px; border-radius: 6px; background: var(--bg); }
+  .event .time { font-size: 11px; color: var(--muted); flex-shrink: 0; font-variant-numeric: tabular-nums; }
+  .event .badge {
+    flex-shrink: 0; font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 999px;
+    background: #e0e7ff; color: #3730a3;
+  }
+  .event.search_start .badge { background: #fef3c7; color: #92400e; }
+  .event.search_done .badge { background: #dcfce7; color: #166534; }
+  .event.error .badge { background: #fee2e2; color: #991b1b; }
+  .event .msg { min-width: 0; }
+  .spinner {
+    display: inline-block; width: 12px; height: 12px; border: 2px solid var(--border);
+    border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite;
+    vertical-align: -2px; margin-right: 6px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* papers */
+  details.topic-group { margin: 0 0 10px; }
+  .topic-group > summary.topic-name { font-weight: 600; margin-bottom: 6px; color: var(--text); font-size: 14px; }
+  .topic-group[open] > summary.topic-name { margin-bottom: 8px; }
+  .paper { border-left: 3px solid var(--border); padding: 4px 10px; margin-bottom: 8px; }
+  .paper a { color: var(--accent); text-decoration: none; font-weight: 600; }
+  .paper .meta { font-size: 12px; color: var(--muted); }
+  .paper .summary { font-size: 13px; }
+
+  #report { overflow-wrap: break-word; }
+  #report pre { overflow-x: auto; background: var(--bg); padding: 10px; border-radius: 6px; }
+  .placeholder { color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="layout">
+  <div class="sidebar">
+    <div class="panel">
+      <h1>Deep Research</h1>
+      <label for="mode">Mode</label>
+      <select id="mode">
+        <option value="deep-research">deep-research (고정 파이프라인)</option>
+        <option value="deep-research-alt">deep-research-alt (supervisor agent)</option>
+      </select>
+      <label for="instruction">Instruction (관심사)</label>
+      <textarea id="instruction" rows="4" placeholder="e.g. 의료 도메인에서의 graph 기반 RAG 활용"></textarea>
+
+      <label for="n_topics">Topics per Round</label>
+      <input type="number" id="n_topics" value="3" min="1" max="5">
+      <label for="max_research_iteration">Max Research Rounds</label>
+      <input type="number" id="max_research_iteration" value="2" min="1" max="5">
+
+      <details>
+        <summary>Search Options</summary>
+        <label for="search_limit">Search Limit</label>
+        <input type="number" id="search_limit" value="10" min="1" max="20">
+        <label for="min_required">Min Required</label>
+        <input type="number" id="min_required" value="3" min="1" max="10">
+        <label for="max_iteration">Max Search Iteration</label>
+        <input type="number" id="max_iteration" value="2" min="1" max="5">
+        <label for="score_threshold">Score Threshold</label>
+        <input type="number" id="score_threshold" value="0.5" min="0" max="1" step="0.05">
+      </details>
+
+      <button id="run">Run</button>
+    </div>
+
+    <div class="panel" id="progress-compact">
+      <div class="panel-head">
+        <h2>Progress</h2>
+        <button class="expand-btn" id="progress-expand" title="세부 내용 보기">확대</button>
+      </div>
+      <div id="progress"><div class="placeholder">Run을 누르면 진행 상황이 표시됩니다.</div></div>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="panel">
+      <h2>Report</h2>
+      <div id="report"><div class="placeholder">최종 보고서가 여기에 표시됩니다.</div></div>
+    </div>
+    <div class="panel">
+      <h2>Papers</h2>
+      <div id="papers"><div class="placeholder">수집된 논문이 여기에 표시됩니다.</div></div>
+    </div>
+  </div>
+</div>
+
+<div id="progress-modal">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h2>Progress</h2>
+      <button class="close-btn" id="progress-close">닫기</button>
+    </div>
+    <div class="modal-body" id="progress-modal-body"></div>
+  </div>
+</div>
+
+<script>
+const API_BASE = new URLSearchParams(location.search).get("api") || "http://100.117.74.112:7100";
+
+const $ = (id) => document.getElementById(id);
+const progressEl = $("progress"), reportEl = $("report"), papersEl = $("papers"), runBtn = $("run");
+
+function now() {
+  return new Date().toLocaleTimeString("ko-KR", { hour12: false });
+}
+
+function addEvent(cls, badge, msg, spinning = false) {
+  const div = document.createElement("div");
+  div.className = `event ${cls}`;
+  div.innerHTML = `<span class="time">${now()}</span><span class="badge">${badge}</span>` +
+    `<span class="msg">${spinning ? '<span class="spinner"></span>' : ""}${msg}</span>`;
+  progressEl.appendChild(div);
+  progressEl.scrollTop = progressEl.scrollHeight;
+  return div;
+}
+
+function renderMarkdown(el, text) {
+  if (window.marked) el.innerHTML = marked.parse(text);
+  else el.innerHTML = `<pre style="white-space:pre-wrap">${text}</pre>`;
+}
+
+function renderPapers(results) {
+  papersEl.innerHTML = "";
+  for (const r of results) {
+    const group = document.createElement("details");
+    group.className = "topic-group";
+    group.open = true;
+    const papers = r.result || [];
+    group.innerHTML = `<summary class="topic-name">${r.topic} (${papers.length})</summary>`;
+    for (const p of papers) {
+      const d = p.data || {};
+      const link = d.id ? `https://huggingface.co/papers/${d.id}` : "#";
+      const authors = (d.authors || []).slice(0, 3).join(", ");
+      const div = document.createElement("div");
+      div.className = "paper";
+      div.innerHTML =
+        `<a href="${link}" target="_blank">${d.title || ""}</a>` +
+        `<div class="meta">score ${(p.score ?? 0).toFixed(2)} | query: ${p.source_query || ""} | ${authors}</div>` +
+        `<div class="summary">${(d.summary || "").slice(0, 250)}...</div>`;
+      group.appendChild(div);
+    }
+    papersEl.appendChild(group);
+  }
+}
+
+// 진행중 표시(spinner)를 위해 search_start 이벤트 요소를 토픽별로 추적
+const searching = new Map();
+let reportSpinner = null;
+
+function handleEvent(evt) {
+  if (evt.type === "search_start") {
+    searching.set(evt.topic, addEvent("search_start", "탐색", `'${evt.topic}' 검색 중...`, true));
+  } else if (evt.type === "search_done") {
+    const started = searching.get(evt.topic);
+    if (started) started.remove();
+    addEvent("search_done", "탐색 완료", `'${evt.topic}' — 논문 ${evt.n_papers}편 수집 (검색 루프 ${evt.iteration}회)`);
+  } else if (evt.type === "node_update") {
+    const d = evt.data || {};
+    if (evt.node === "topic_generation") {
+      addEvent("node", "토픽 생성", d.topics.map(t => `'${t}'`).join(", "));
+    } else if (evt.node === "search") {
+      addEvent("node", "라운드 완료", `라운드 ${d.iteration}: 논문 ${d.n_papers}편 수집`);
+    } else if (evt.node === "review") {
+      const followup = d.followup_topics?.length
+        ? `추가 탐색 토픽: ${d.followup_topics.map(t => `'${t}'`).join(", ")}`
+        : "추가 탐색 없이 종료";
+      addEvent("node", "검토", `${d.review}<br>${followup}`);
+    } else if (evt.node === "supervisor") {
+      // deep-research-alt: supervisor agent 종료 (검토 의견 + 탐색 토픽 요약)
+      const topics = d.topics?.length ? `탐색 토픽: ${d.topics.map(t => `'${t}'`).join(", ")}<br>` : "";
+      addEvent("node", "수퍼바이저", `${topics}논문 ${d.n_papers}편 수집<br>${d.review || ""}`);
+    } else if (evt.node === "aggregation") {
+      addEvent("node", "집계", `토픽 ${d.results.length}개 결과 집계 완료`);
+      renderPapers(d.results);
+      // 보고서 작성이 가장 오래 걸리는 단계라 진행중 표시
+      reportSpinner = addEvent("node", "보고서", "최종 보고서 작성 중...", true);
+    } else if (evt.node === "report") {
+      if (reportSpinner) { reportSpinner.remove(); reportSpinner = null; }
+      addEvent("node", "보고서", "최종 보고서 작성 완료");
+      renderMarkdown(reportEl, d.report || "");
+    }
+  } else if (evt.type === "done") {
+    addEvent("done", "완료", "딥리서치 완료");
+  } else if (evt.type === "error") {
+    addEvent("error", "에러", evt.message || "unknown error");
+  }
+}
+
+async function run() {
+  const instruction = $("instruction").value.trim();
+  if (!instruction) { alert("Instruction을 입력해 주세요."); return; }
+
+  runBtn.disabled = true;
+  progressEl.innerHTML = "";
+  reportEl.innerHTML = '<div class="placeholder">최종 보고서가 여기에 표시됩니다.</div>';
+  papersEl.innerHTML = '<div class="placeholder">수집된 논문이 여기에 표시됩니다.</div>';
+  searching.clear();
+  const mode = $("mode").value;
+  addEvent("node", "시작", `딥리서치 시작 (${mode})`, true);
+
+  try {
+    const res = await fetch(`${API_BASE}/${mode}/stream`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        instruction,
+        n_topics: Number($("n_topics").value),
+        max_research_iteration: Number($("max_research_iteration").value),
+        search_limit: Number($("search_limit").value),
+        min_required: Number($("min_required").value),
+        max_iteration: Number($("max_iteration").value),
+        score_threshold: Number($("score_threshold").value),
+      }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    // SSE 파싱: "data: {...}\n\n" 단위로 분리
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let idx;
+      while ((idx = buf.indexOf("\n\n")) >= 0) {
+        const raw = buf.slice(0, idx).trim();
+        buf = buf.slice(idx + 2);
+        if (raw.startsWith("data:")) handleEvent(JSON.parse(raw.slice(5)));
+      }
+    }
+  } catch (e) {
+    addEvent("error", "에러", e.message);
+  } finally {
+    // "시작" 이벤트의 spinner 제거
+    progressEl.querySelectorAll(".spinner").forEach(s => s.remove());
+    runBtn.disabled = false;
+  }
+}
+
+runBtn.addEventListener("click", run);
+
+// Progress 모달: #progress 노드를 통째로 옮겨서 이벤트 스트림 참조를 유지
+const modal = $("progress-modal"), modalBody = $("progress-modal-body"), compact = $("progress-compact");
+$("progress-expand").addEventListener("click", () => {
+  modalBody.appendChild(progressEl);
+  modal.classList.add("open");
+  progressEl.scrollTop = progressEl.scrollHeight;
+});
+function closeModal() {
+  compact.appendChild(progressEl);
+  modal.classList.remove("open");
+  progressEl.scrollTop = progressEl.scrollHeight;
+}
+$("progress-close").addEventListener("click", closeModal);
+modal.addEventListener("click", (e) => { if (e.target === modal) closeModal(); });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && modal.classList.contains("open")) closeModal();
+});
+</script>
+</body>
+</html>

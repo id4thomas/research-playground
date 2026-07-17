@@ -67,13 +67,19 @@ class ResearchAgent(BaseAgent):
 
         return builder.compile()
 
-    async def invoke(self, state: dict, config: SearchConfig | None = None) -> dict:
+    async def invoke(self, state: dict, config: SearchConfig | None = None, callbacks: list | None = None) -> dict:
         graph = self.compile_graph()
-        run_config = {"configurable": {"search": (config or SearchConfig()).model_dump()}}
+        run_config = {
+            "configurable": {"search": (config or SearchConfig()).model_dump()},
+            "callbacks": callbacks or [],
+        }
         return await graph.ainvoke(state, config=run_config)
 
-    async def astream(self, state: dict, config: SearchConfig | None = None):
+    async def astream(self, state: dict, config: SearchConfig | None = None, callbacks: list | None = None):
         graph = self.compile_graph()
-        run_config = {"configurable": {"search": (config or SearchConfig()).model_dump()}}
+        run_config = {
+            "configurable": {"search": (config or SearchConfig()).model_dump()},
+            "callbacks": callbacks or [],
+        }
         async for event in graph.astream_events(state, config=run_config, version="v2"):
             yield event

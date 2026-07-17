@@ -12,9 +12,10 @@ class LLMClientConfig(BaseSettings):
     api_key: str = "sk-123"
 
 class TracingConfig(BaseSettings):
-    """LLM/Agent Tracing (mlflow)"""
-    uri: str = "http://localhost:7000"
-    experiment: str = "2603-2-deepsearch"
+    """LLM/Agent Tracing (langfuse)"""
+    host: str = "http://localhost:3000"
+    public_key: str = ""
+    secret_key: str = ""
 
 class LoggingSettings(BaseModel):
     log_level: Literal["debug", "info", "warning", "error", "critical"] = Field("info", description="Log level")
